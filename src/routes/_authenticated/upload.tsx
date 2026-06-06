@@ -12,6 +12,8 @@ import { Upload, CheckCircle2, AlertTriangle, Loader2, FileSpreadsheet } from "l
 import { toast } from "sonner";
 import { parseExcel, classifyAccounts, saveClassifications, getMappingsSummary } from "@/lib/mapping.functions";
 import { previewImport, commitImport, previewJournalImport, commitJournalImport } from "@/lib/demo-import.functions";
+import { parseFileUniversal, approveColumnMapping, listColumnMappings } from "@/lib/universal-parser.functions";
+import { STANDARD_FIELDS, type StandardField } from "@/lib/column-detector";
 import { GL_CATEGORIES } from "@/lib/categories";
 
 export const Route = createFileRoute("/_authenticated/upload")({
@@ -36,12 +38,16 @@ function UploadPage() {
   return (
     <div className="p-8 max-w-7xl">
       <h1 className="text-2xl font-semibold mb-1">Upload & Map</h1>
-      <p className="text-muted-foreground mb-6">Drop an Excel export — either GL accounts to map, or invoice data to seed the forecast.</p>
-      <Tabs defaultValue="gl">
+      <p className="text-muted-foreground mb-6">Drop any Excel/CSV export — the universal parser detects columns, asks for review on anything new, and seeds the forecast.</p>
+      <Tabs defaultValue="smart">
         <TabsList>
+          <TabsTrigger value="smart">Smart Import</TabsTrigger>
+          <TabsTrigger value="columns">Column Mappings</TabsTrigger>
           <TabsTrigger value="gl">GL Mapping</TabsTrigger>
           <TabsTrigger value="demo">Demo Data</TabsTrigger>
         </TabsList>
+        <TabsContent value="smart" className="mt-6"><SmartImportTab /></TabsContent>
+        <TabsContent value="columns" className="mt-6"><ColumnMappingsTab /></TabsContent>
         <TabsContent value="gl" className="mt-6"><GlMappingTab /></TabsContent>
         <TabsContent value="demo" className="mt-6"><DemoDataTab /></TabsContent>
       </Tabs>
@@ -469,4 +475,319 @@ function DemoDataTab() {
     </div>
   );
 }
+
+// ────────────────────────────────────────────────────────────────────
+// Smart Import (universal 3-layer detection)
+// ────────────────────────────────────────────────────────────────────
+
+type ParseUniversalResult = Awaited<ReturnType<typeof parseFileUniversal>>;
+type Detection = ParseUniversalResult["detections"][number];
+
+function SmartImportTab() {
+  const parse = useServerFn(parseFileUniversal);
+  const approve = useServerFn(approveColumnMapping);
+  const toB64 = useFileToBase64();
+  const qc = useQueryClient();
+
+  const [result, setResult] = useState<ParseUniversalResult | null>(null);
+  const [detections, setDetections] = useState<Detection[]>([]);
+
+  const parseM = useMutation({
+    mutationFn: async (file: File) => {
+      const fileBase64 = await toB64(file);
+      return parse({ data: { fileBase64, filename: file.name } });
+    },
+    onSuccess: (r) => {
+      setResult(r);
+      setDetections(r.detections);
+      const review = r.needsAIReview.length;
+      if (review > 0) {
+        toast.warning(`Detected ${r.detections.length} columns — ${review} need review`);
+      } else {
+        toast.success(`All ${r.detections.length} columns auto-recognized`);
+      }
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const approveM = useMutation({
+    mutationFn: async (det: Detection) =>
+      approve({
+        data: {
+          columnName: det.original_name,
+          standardField: det.standard_field,
+          sampleValues: det.sample_values ?? [],
+          applyGlobal: false,
+        },
+      }),
+    onSuccess: (_d, det) => {
+      setDetections((ds) =>
+        ds.map((x) =>
+          x.original_name === det.original_name ? { ...x, needs_review: false, source: "previous_approval", confidence: 1 } : x,
+        ),
+      );
+      qc.invalidateQueries({ queryKey: ["column-mappings"] });
+      toast.success(`Saved: ${det.original_name} → ${det.standard_field}`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop: (files) => files[0] && parseM.mutate(files[0]),
+    accept: {
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+      "text/csv": [".csv"],
+    },
+    multiple: false,
+  });
+
+  const reviewQueue = detections.filter((d) => d.needs_review);
+  const allReviewed = reviewQueue.length === 0;
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardContent className="p-6">
+          <div
+            {...getRootProps()}
+            className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition ${isDragActive ? "border-accent bg-accent/5" : "border-border"}`}
+          >
+            <input {...getInputProps()} />
+            <Upload className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
+            <p className="text-sm">
+              {parseM.isPending ? "Parsing…" : "Drop any .xlsx or .csv — rule engine → previous approvals → AI as last resort."}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {result && (
+        <>
+          {/* Quality score panel */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Parse quality: {result.qualityScore}%</CardTitle>
+                  <CardDescription>
+                    {result.transactionCount} rows parsed · €{result.reconciliation.total_credit.toLocaleString()} credit · €{result.reconciliation.total_debet.toLocaleString()} debet
+                  </CardDescription>
+                </div>
+                <Badge variant={allReviewed ? "default" : "destructive"}>
+                  {allReviewed ? "Ready to import" : `${reviewQueue.length} column(s) need review`}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
+                {(["date", "credit", "debet", "invoice_number", "account_code"] as StandardField[]).map((f) => {
+                  const found = detections.some((d) => d.standard_field === f);
+                  return (
+                    <div key={f} className="flex items-center gap-2">
+                      {found ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4 text-amber-600" />
+                      )}
+                      <span className={found ? "" : "text-muted-foreground"}>{f}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Column detection report */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Column detection report</CardTitle>
+              <CardDescription>One row per column in the upload. Green = auto-approved, amber = AI suggestion, red = unknown.</CardDescription>
+            </CardHeader>
+            <CardContent className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-xs uppercase text-muted-foreground text-left">
+                  <tr>
+                    <th className="py-2 pr-3">Column</th>
+                    <th className="py-2 pr-3">Detected as</th>
+                    <th className="py-2 pr-3">Confidence</th>
+                    <th className="py-2 pr-3">Source</th>
+                    <th className="py-2 pr-3">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detections.map((d, i) => (
+                    <DetectionRow
+                      key={i}
+                      det={d}
+                      onChange={(field) =>
+                        setDetections((ds) =>
+                          ds.map((x, j) => (j === i ? { ...x, standard_field: field } : x)),
+                        )
+                      }
+                      onApprove={() => approveM.mutate(d)}
+                      isApproving={approveM.isPending}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+
+          {/* Reconciliation */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Reconciliation</CardTitle>
+            </CardHeader>
+            <CardContent className="font-mono text-sm space-y-1">
+              <div>Total credit: €{result.reconciliation.total_credit.toLocaleString()}</div>
+              <div>Total debet: €{result.reconciliation.total_debet.toLocaleString()}</div>
+              <div>Net: €{(result.reconciliation.total_credit - result.reconciliation.total_debet).toLocaleString()}</div>
+              <div>Rows: {result.reconciliation.row_count}</div>
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
+function DetectionRow({
+  det,
+  onChange,
+  onApprove,
+  isApproving,
+}: {
+  det: Detection;
+  onChange: (f: StandardField) => void;
+  onApprove: () => void;
+  isApproving: boolean;
+}) {
+  const rowClass = det.needs_review
+    ? det.standard_field === "unknown"
+      ? "bg-destructive/5"
+      : "bg-amber-500/5"
+    : "bg-emerald-500/5";
+  return (
+    <tr className={`border-t ${rowClass}`}>
+      <td className="py-2 pr-3 font-mono">{det.original_name}
+        {det.sample_values && det.sample_values.length > 0 && (
+          <div className="text-xs text-muted-foreground truncate max-w-[260px]">
+            e.g. {det.sample_values.slice(0, 3).join(" · ")}
+          </div>
+        )}
+        {det.reasoning && <div className="text-xs text-muted-foreground italic">{det.reasoning}</div>}
+      </td>
+      <td className="py-2 pr-3 min-w-[180px]">
+        <Select value={det.standard_field} onValueChange={(v) => onChange(v as StandardField)}>
+          <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+          <SelectContent>{STANDARD_FIELDS.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}</SelectContent>
+        </Select>
+      </td>
+      <td className="py-2 pr-3">{Math.round((det.confidence ?? 0) * 100)}%</td>
+      <td className="py-2 pr-3">
+        <Badge variant="outline" className="text-xs uppercase">{det.source}</Badge>
+      </td>
+      <td className="py-2 pr-3">
+        {det.needs_review ? (
+          <Button size="sm" onClick={onApprove} disabled={isApproving}>
+            {isApproving && <Loader2 className="w-3 h-3 mr-1 animate-spin" />} Approve
+          </Button>
+        ) : (
+          <span className="text-xs text-emerald-700 flex items-center gap-1"><CheckCircle2 size={12} /> Auto</span>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Column Mappings tab
+// ────────────────────────────────────────────────────────────────────
+
+function ColumnMappingsTab() {
+  const list = useServerFn(listColumnMappings);
+  const approve = useServerFn(approveColumnMapping);
+  const qc = useQueryClient();
+  const [filter, setFilter] = useState<"all" | "needs_review" | "approved">("all");
+
+  const q = useQuery({ queryKey: ["column-mappings"], queryFn: () => list({}) });
+
+  const approveM = useMutation({
+    mutationFn: (m: { columnName: string; field: StandardField; samples: string[] }) =>
+      approve({ data: { columnName: m.columnName, standardField: m.field, sampleValues: m.samples, applyGlobal: false } }),
+    onSuccess: () => {
+      toast.success("Approved");
+      qc.invalidateQueries({ queryKey: ["column-mappings"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const rows = (q.data?.mappings ?? []).filter((r) => (filter === "all" ? true : r.status === filter));
+  const learned = (q.data?.mappings ?? []).filter((m) => m.status === "approved").length;
+  const aiCalls = (q.data?.mappings ?? []).filter((m) => m.source === "openai").length;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-muted-foreground">
+          <strong>{learned}</strong> column type(s) learned · approximately <strong>{aiCalls}</strong> AI call(s) saved on future uploads
+        </div>
+        <Select value={filter} onValueChange={(v) => setFilter(v as typeof filter)}>
+          <SelectTrigger className="w-[180px] h-8"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="needs_review">Needs review</SelectItem>
+            <SelectItem value="approved">Approved</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <Card>
+        <CardContent className="p-0 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs uppercase text-muted-foreground text-left">
+              <tr>
+                <th className="py-2 px-3">Column</th>
+                <th className="py-2 px-3">Mapped to</th>
+                <th className="py-2 px-3">Source</th>
+                <th className="py-2 px-3">Status</th>
+                <th className="py-2 px-3">Scope</th>
+                <th className="py-2 px-3">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id} className="border-t">
+                  <td className="py-2 px-3 font-mono">{r.source_column_name}
+                    {r.reasoning && <div className="text-xs text-muted-foreground italic">{r.reasoning}</div>}
+                  </td>
+                  <td className="py-2 px-3">{r.standard_field}</td>
+                  <td className="py-2 px-3"><Badge variant="outline" className="uppercase text-xs">{r.source}</Badge></td>
+                  <td className="py-2 px-3">
+                    {r.status === "approved"
+                      ? <Badge className="bg-emerald-600 hover:bg-emerald-600">approved</Badge>
+                      : <Badge variant="destructive">{r.status}</Badge>}
+                  </td>
+                  <td className="py-2 px-3 text-xs text-muted-foreground">{r.company_id ? "company" : "global"}</td>
+                  <td className="py-2 px-3">
+                    {r.status !== "approved" && r.standard_field && (
+                      <Button size="sm" onClick={() => approveM.mutate({
+                        columnName: r.source_column_name,
+                        field: r.standard_field as StandardField,
+                        samples: r.sample_values ?? [],
+                      })}>Approve</Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {rows.length === 0 && (
+                <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">No mappings yet</td></tr>
+              )}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 
