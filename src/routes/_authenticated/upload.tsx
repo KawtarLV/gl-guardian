@@ -486,6 +486,7 @@ type Detection = ParseUniversalResult["detections"][number];
 function SmartImportTab() {
   const parse = useServerFn(parseFileUniversal);
   const approve = useServerFn(approveColumnMapping);
+  const commit = useServerFn(commitUniversalImport);
   const toB64 = useFileToBase64();
   const qc = useQueryClient();
 
