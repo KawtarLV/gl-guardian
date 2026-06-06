@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Upload, CheckCircle2, AlertTriangle, Loader2, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { parseExcel, classifyAccounts, saveClassifications, getMappingsSummary } from "@/lib/mapping.functions";
-import { previewImport, commitImport } from "@/lib/demo-import.functions";
+import { previewImport, commitImport, previewJournalImport, commitJournalImport } from "@/lib/demo-import.functions";
 import { GL_CATEGORIES } from "@/lib/categories";
 
 export const Route = createFileRoute("/_authenticated/upload")({
