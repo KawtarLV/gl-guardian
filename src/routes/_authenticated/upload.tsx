@@ -615,9 +615,14 @@ function SmartImportTab() {
                     {result.transactionCount} rows parsed · €{result.reconciliation.total_credit.toLocaleString()} credit · €{result.reconciliation.total_debet.toLocaleString()} debet
                   </CardDescription>
                 </div>
-                <Badge variant={allReviewed ? "default" : "destructive"}>
-                  {allReviewed ? "Ready to import" : `${reviewQueue.length} column(s) need review`}
-                </Badge>
+                {allReviewed ? (
+                  <Button onClick={() => commitM.mutate()} disabled={commitM.isPending || !result}>
+                    {commitM.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    Ready to import — click to commit
+                  </Button>
+                ) : (
+                  <Badge variant="destructive">{reviewQueue.length} column(s) need review</Badge>
+                )}
               </div>
             </CardHeader>
             <CardContent>
