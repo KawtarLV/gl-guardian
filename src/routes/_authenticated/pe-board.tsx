@@ -93,7 +93,7 @@ function PeBoard() {
                 {perCompany.map((x) => (
                   <tr key={x.company.id} className="border-t">
                     <td className="py-2 font-medium">{x.company.name}</td>
-                    <td className="py-2 text-muted-foreground">{x.company.city ?? x.company.region ?? "—"}</td>
+                    <td className="py-2 text-muted-foreground">{x.company.city ?? "—"}</td>
                     <td className="py-2 text-right">{x.projectCount}</td>
                     <td className="py-2 text-right">{eur(x.pipeline)}</td>
                     <td className="py-2 text-right">{eur(x.wip)}</td>
