@@ -533,6 +533,28 @@ function SmartImportTab() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const commitM = useMutation({
+    mutationFn: async () => {
+      if (!result) throw new Error("Nothing to import");
+      return commit({
+        data: {
+          uploadId: result.uploadId ?? null,
+          transactions: result.transactions.map((t) => ({
+            account_code: t.account_code,
+            date: t.date,
+            invoice_number: t.invoice_number,
+            customer_code: t.customer_code,
+            debet: t.debet,
+            credit: t.credit,
+            description: t.description,
+          })),
+        },
+      });
+    },
+    onSuccess: (r) => toast.success(`Imported ${r.inserted} invoice(s)`),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: (files) => files[0] && parseM.mutate(files[0]),
     accept: {
