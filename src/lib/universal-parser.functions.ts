@@ -11,11 +11,19 @@ import { parseAmount } from "./number-parser";
 import { parseDate, parsePeriod } from "./date-parser";
 
 // ── Public types ─────────────────────────────────────────────────────
+export interface FileContext {
+  account_code?: string;
+  company_name?: string;
+  year?: number;
+  period_from?: string;
+  period_to?: string;
+}
+
 export interface ColumnDetectionResult {
   original_name: string;
   standard_field: StandardField;
   confidence: number;
-  source: "rule_engine" | "previous_approval" | "openai" | "unknown";
+  source: "rule_engine" | "sample_analysis" | "previous_approval" | "claude" | "unknown";
   needs_review: boolean;
   reasoning?: string;
   mapping_id?: string;
@@ -34,6 +42,136 @@ export interface ParsedTransaction {
   journal: string | null;
   raw_row: Record<string, string>;
   parse_warnings: string[];
+}
+
+// Keywords that prove a row is the real header row
+const HEADER_KEYWORDS = [
+  "nr", "nr.", "per", "per.", "datum", "date", "bkst", "bkst.nr", "bkst.nr.",
+  "dagboek", "journal", "debet", "debit", "credit", "rekening", "account",
+  "boeknummer", "trek", "periode", "period", "boekingstekst", "omschrijving",
+  "description", "btw", "vat", "relatie", "klant", "factuurnummer",
+];
+
+interface HeaderDetection {
+  headerIndex: number;
+  dataStartIndex: number;
+  context: FileContext;
+}
+
+/** Skip metadata rows at the top of the file; find the row with real column headers
+ *  and extract file context (company, account, year, period range). */
+export function findHeaderRow(allRows: string[][]): HeaderDetection {
+  const context: FileContext = {};
+
+  for (let i = 0; i < Math.min(allRows.length, 30); i++) {
+    const row = allRows[i] ?? [];
+    const joined = row.join(" ");
+
+    const adminMatch = joined.match(/administratie:\s*\d+\s*-\s*(.+)/i);
+    if (adminMatch) context.company_name = adminMatch[1].trim();
+
+    const accountMatch = joined.match(/grootboekrekening\s+(\d{3,6})/i);
+    if (accountMatch) context.account_code = accountMatch[1];
+
+    const yearMatch = joined.match(/boekjaar\s+(\d{4})/i);
+    if (yearMatch) context.year = parseInt(yearMatch[1], 10);
+
+    const periodMatch = joined.match(/periode\s+(\d{1,2})\s*-\s*(\d{1,2})/i);
+    if (periodMatch) {
+      context.period_from = periodMatch[1];
+      context.period_to = periodMatch[2];
+    }
+
+    const matchCount = row.filter((cell) => {
+      if (!cell?.trim()) return false;
+      const n = normaliseColumnName(cell);
+      return HEADER_KEYWORDS.some((kw) => n === kw || n.startsWith(kw + " "));
+    }).length;
+
+    if (matchCount >= 3) {
+      return { headerIndex: i, dataStartIndex: i + 1, context };
+    }
+  }
+  return { headerIndex: 0, dataStartIndex: 1, context };
+}
+
+/** Layer 1b — identify a column from what its sample data looks like (no AI cost). */
+function detectViaSamples(
+  columnName: string,
+  samples: string[],
+): Omit<ColumnDetectionResult, "original_name"> | null {
+  const nonEmpty = samples.filter((s) => s?.trim());
+  if (nonEmpty.length < 2) return null;
+
+  const allDates = nonEmpty.every((s) => !!parseDate(s));
+  if (allDates) {
+    return {
+      standard_field: "date",
+      confidence: 0.92,
+      source: "sample_analysis",
+      needs_review: false,
+      reasoning: `All sample values parse as dates: ${nonEmpty.slice(0, 3).join(", ")}`,
+    };
+  }
+
+  const allPeriodNums = nonEmpty.every((s) => {
+    const n = parseInt(s, 10);
+    return !isNaN(n) && n >= 1 && n <= 12 && s.trim().length <= 2;
+  });
+  if (allPeriodNums) {
+    return {
+      standard_field: "period",
+      confidence: 0.85,
+      source: "sample_analysis",
+      needs_review: false,
+      reasoning: "Sample values are period numbers 1–12",
+    };
+  }
+
+  const intSeq = nonEmpty.every((s) => /^\d{1,5}$/.test(s.trim()));
+  if (intSeq) {
+    const last = parseInt(nonEmpty[nonEmpty.length - 1], 10);
+    if (last === nonEmpty.length || last <= nonEmpty.length + 2) {
+      return {
+        standard_field: "row_number",
+        confidence: 0.8,
+        source: "sample_analysis",
+        needs_review: false,
+        reasoning: "Sequential integers — looks like a row index",
+      };
+    }
+  }
+
+  const amounts = nonEmpty.map((s) => parseAmount(s));
+  const allAmounts = amounts.every((n) => n !== 0);
+  const hasLarge = amounts.some((n) => Math.abs(n) > 1000);
+  if (allAmounts && hasLarge) {
+    const hint = columnName.toLowerCase();
+    const field: StandardField = hint.includes("debet") || hint.includes("af") ? "debet" : "credit";
+    return {
+      standard_field: field,
+      confidence: 0.8,
+      source: "sample_analysis",
+      needs_review: false,
+      reasoning: `Monetary values detected: ${nonEmpty.slice(0, 3).join(", ")}`,
+    };
+  }
+
+  const journalish = nonEmpty.every(
+    (s) =>
+      /verkoop|inkoop|memoriaal|bank|kas|boek/i.test(s) || /^\d{1,3}\s*-\s*.+/.test(s),
+  );
+  if (journalish) {
+    return {
+      standard_field: "journal",
+      confidence: 0.85,
+      source: "sample_analysis",
+      needs_review: false,
+      reasoning: "Values match Dutch dagboek patterns",
+    };
+  }
+
+  return null;
 }
 
 // ── Validation ───────────────────────────────────────────────────────
@@ -60,7 +198,8 @@ export const parseFileUniversal = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { userId } = context;
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { parseWorkbook } = await import("./excel.server");
+    const { parseWorkbookRaw } = await import("./excel.server");
+    const { claudeMessage } = await import("./ai.server");
 
     // Find user's company
     const { data: mem } = await supabaseAdmin
@@ -70,38 +209,55 @@ export const parseFileUniversal = createServerFn({ method: "POST" })
       .maybeSingle();
     const companyId = mem?.company_id ?? null;
 
+    // Read every sheet as a raw matrix — no header inference yet
     const buf = Buffer.from(data.fileBase64, "base64");
-    const sheets = parseWorkbook(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
-    // Use the first sheet that has rows
+    const sheets = parseWorkbookRaw(
+      buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
+    );
     const sheet = sheets.find((s) => s.rows.length > 0) ?? sheets[0];
     if (!sheet) throw new Error("File contains no sheets");
 
-    const headers = sheet.headers;
-    const rows = sheet.rows.map((r) =>
-      headers.map((h) => (r[h] == null ? "" : String(r[h])))
-    );
+    // ── Find the real header row, skipping metadata ──────────────
+    const { headerIndex, dataStartIndex, context: fileContext } = findHeaderRow(sheet.rows);
+    const mergedContext: FileContext = { ...fileContext, ...(data.fileContext ?? {}) };
+
+    const headers = (sheet.rows[headerIndex] ?? []).map((h) => (h ?? "").trim());
+    const rows = sheet.rows
+      .slice(dataStartIndex)
+      .filter((r) => r.some((c) => c?.trim()))
+      .map((r) => headers.map((_, i) => (r[i] ?? "").trim()));
 
     // ── Detect each column ────────────────────────────────────────
     const detections: ColumnDetectionResult[] = [];
     for (let idx = 0; idx < headers.length; idx++) {
-      const header = headers[idx];
+      const header = headers[idx] || `(empty col ${idx + 1})`;
       const samples = rows.slice(0, 10).map((r) => r[idx] || "").filter((v) => v.trim()).slice(0, 5);
 
-      // Layer 1: rule engine
-      const ruleField = detectFieldFromRules(header);
-      if (ruleField) {
-        detections.push({
-          original_name: header,
-          standard_field: ruleField,
-          confidence: 1.0,
-          source: "rule_engine",
-          needs_review: false,
-          sample_values: samples,
-        });
+      // Layer 1: rule engine (skip if header is empty/__EMPTY)
+      if (header && !header.startsWith("__EMPTY") && !header.startsWith("(empty")) {
+        const ruleField = detectFieldFromRules(header);
+        if (ruleField) {
+          detections.push({
+            original_name: header,
+            standard_field: ruleField,
+            confidence: 1.0,
+            source: "rule_engine",
+            needs_review: false,
+            reasoning: `Matched alias "${normaliseColumnName(header)}"`,
+            sample_values: samples,
+          });
+          continue;
+        }
+      }
+
+      // Layer 1b: sample analysis
+      const sampleDet = detectViaSamples(header, samples);
+      if (sampleDet) {
+        detections.push({ original_name: header, sample_values: samples, ...sampleDet });
         continue;
       }
 
-      // Layer 2: previous approval (company-scoped, then global)
+      // Layer 2: previous approval
       const normalised = normaliseColumnName(header);
       const { data: approval } = await supabaseAdmin
         .from("column_mappings")
@@ -126,49 +282,35 @@ export const parseFileUniversal = createServerFn({ method: "POST" })
         continue;
       }
 
-      // Layer 3: OpenAI
+      // Layer 3: Claude (only for genuinely unknown columns)
       let aiField: StandardField = "unknown";
-      let aiConfidence = 0.5;
-      let aiReasoning = "AI could not determine field type";
+      let aiConfidence = 0;
+      let aiReasoning = "AI unavailable — select the field type manually";
+      let aiSource: ColumnDetectionResult["source"] = "unknown";
       try {
-        const { chatCompletion } = await import("./ai.server");
         const prompt = `You are a Dutch accounting expert. Identify what standard financial field this column represents.
 
 Column name: "${header}"
-Sample values from this column: ${JSON.stringify(samples)}
+Sample values: ${JSON.stringify(samples)}
 
-Choose exactly one of these standard fields:
+Choose exactly one of:
 account_code | period | date | invoice_number | customer_code | debet | credit | description | journal | vat | row_number | unknown
 
-Dutch accounting context:
-- "Trek", "Relatie", "Klantnummer", "Debiteur" = customer_code
-- "Datum", "Factuurdatum", "Boekingsdatum" = date
-- "Boeknummer", "Bkst.nr", "Factuurnummer" = invoice_number
-- "Rekening", "Grootboek" = account_code
-- "Dagboek", "Boek" = journal
-- "Periode", "Per", "Maand" = period
-- "Boekingstekst", "Omschrijving", "Tekst" = description
-- Amounts in a column called "Debet/Af" = debet; in "Credit/Bij" = credit
-- If cannot determine = unknown
+Reply ONLY as valid JSON: {"field": "...", "confidence": 0.0-1.0, "reasoning": "..."}`;
 
-Reply ONLY as valid JSON:
-{"field": "customer_code", "confidence": 0.92, "reasoning": "Trek is the Dutch term for relation/customer reference"}`;
-
-        const reply = await chatCompletion(
-          "You are a strict JSON-only classifier for Dutch accounting column headers.",
-          prompt,
-          { model: "gpt-4o-mini", temperature: 0 },
-        );
-        const cleaned = reply.replace(/```json\s*|\s*```/g, "").trim();
-        const parsed = JSON.parse(cleaned);
-        if (STANDARD_FIELDS.includes(parsed.field)) aiField = parsed.field;
-        aiConfidence = Math.max(0, Math.min(1, Number(parsed.confidence) || 0.5));
-        aiReasoning = String(parsed.reasoning ?? aiReasoning);
+        const reply = await claudeMessage(prompt, { maxTokens: 200 });
+        if (reply) {
+          const cleaned = reply.replace(/```json\s*|\s*```/g, "").trim();
+          const parsed = JSON.parse(cleaned);
+          if ((STANDARD_FIELDS as readonly string[]).includes(parsed.field)) aiField = parsed.field;
+          aiConfidence = Math.max(0, Math.min(1, Number(parsed.confidence) || 0.5));
+          aiReasoning = String(parsed.reasoning ?? aiReasoning);
+          aiSource = "claude";
+        }
       } catch (e) {
-        aiReasoning = `AI call failed: ${e instanceof Error ? e.message : String(e)}`;
+        aiReasoning = `Claude failed: ${e instanceof Error ? e.message : String(e)}`;
       }
 
-      // Persist as needs_review so a human can approve
       const { data: saved } = await supabaseAdmin
         .from("column_mappings")
         .upsert(
@@ -181,7 +323,7 @@ Reply ONLY as valid JSON:
             standard_field: aiField,
             confidence: aiConfidence,
             reasoning: aiReasoning,
-            source: "openai",
+            source: aiSource,
             status: "needs_review",
           } as never,
           { onConflict: "company_id,normalised_column_name" } as never,
@@ -193,7 +335,7 @@ Reply ONLY as valid JSON:
         original_name: header,
         standard_field: aiField,
         confidence: aiConfidence,
-        source: "openai",
+        source: aiSource,
         needs_review: true,
         reasoning: aiReasoning,
         mapping_id: (saved?.id as string | undefined) ?? undefined,
@@ -220,16 +362,15 @@ Reply ONLY as valid JSON:
       const rowWarnings: string[] = [];
 
       let accountCode = get(row, "account_code");
-      if (!accountCode && data.fileContext?.account_code) {
-        accountCode = data.fileContext.account_code;
-        rowWarnings.push(`account_code from file context: ${accountCode}`);
+      if (!accountCode && mergedContext.account_code) {
+        accountCode = mergedContext.account_code;
       }
 
       const rawDate = get(row, "date");
       const parsedDate = parseDate(rawDate || null);
       if (rawDate && !parsedDate) rowWarnings.push(`Cannot parse date: "${rawDate}"`);
 
-      const yearContext = parsedDate ? parseInt(parsedDate.slice(0, 4), 10) : data.fileContext?.year;
+      const yearContext = parsedDate ? parseInt(parsedDate.slice(0, 4), 10) : mergedContext.year;
       const period = parsePeriod(get(row, "period") || null, yearContext);
 
       const debet = parseAmount(get(row, "debet"));
@@ -245,14 +386,16 @@ Reply ONLY as valid JSON:
         credit,
         description: get(row, "description") || null,
         journal: get(row, "journal") || null,
-        raw_row: Object.fromEntries(headers.map((h, i) => [h, row[i] || ""])),
+        raw_row: Object.fromEntries(headers.map((h, i) => [h || `col${i + 1}`, row[i] || ""])),
         parse_warnings: rowWarnings,
       });
     }
 
     // ── Quality score ─────────────────────────────────────────────
-    const keyFields: StandardField[] = ["date", "credit", "debet", "invoice_number", "account_code"];
-    const found = keyFields.filter((f) => fieldIndex[f] !== undefined).length;
+    const keyFields: StandardField[] = ["date", "credit", "invoice_number", "account_code"];
+    const found = keyFields.filter(
+      (f) => fieldIndex[f] !== undefined || (f === "account_code" && !!mergedContext.account_code),
+    ).length;
     const qualityScore = Math.round((found / keyFields.length) * 100);
 
     const totalCredit = transactions.reduce((s, t) => s + t.credit, 0);
@@ -293,8 +436,10 @@ Reply ONLY as valid JSON:
       companyId,
       headers,
       sheetName: sheet.sheetName,
+      headerRowIndex: headerIndex,
+      fileContext: mergedContext,
       detections,
-      transactions: transactions.slice(0, 1000), // cap for transport
+      transactions: transactions.slice(0, 1000),
       transactionCount: transactions.length,
       qualityScore,
       needsAIReview,
@@ -337,7 +482,9 @@ export const approveColumnMapping = createServerFn({ method: "POST" })
 
     const { data: saved, error } = await supabaseAdmin
       .from("column_mappings")
-      .upsert(payload as never, { onConflict: companyId ? "company_id,normalised_column_name" : "normalised_column_name" } as never)
+      .upsert(payload as never, {
+        onConflict: companyId ? "company_id,normalised_column_name" : "normalised_column_name",
+      } as never)
       .select("id")
       .single();
     if (error) throw new Error(error.message);
