@@ -282,7 +282,7 @@ export const parseFileUniversal = createServerFn({ method: "POST" })
         continue;
       }
 
-      // Layer 3: Claude (only for genuinely unknown columns)
+      // Layer 3: AI (Lovable AI Gateway — only for genuinely unknown columns)
       let aiField: StandardField = "unknown";
       let aiConfidence = 0;
       let aiReasoning = "AI unavailable — select the field type manually";
