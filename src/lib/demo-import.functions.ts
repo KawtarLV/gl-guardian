@@ -11,6 +11,7 @@ const InvoiceRowSchema = z.object({
 });
 const PreviewInput = z.object({
   invoices: z.array(InvoiceRowSchema).min(1).max(5000),
+  filename: z.string().nullable().optional(),
 });
 
 function inferType(name: string): "small_repair" | "commercial" | "housing_corp" | "unknown" {
@@ -55,6 +56,31 @@ export const commitImport = createServerFn({ method: "POST" })
     const companyId = mem?.company_id;
     if (!companyId) throw new Error("No company found for user");
 
+    const { data: upload } = await supabaseAdmin
+      .from("file_uploads")
+      .insert({
+        company_id: companyId,
+        filename: data.filename ?? "invoice import",
+        file_structure: "invoice_import",
+        total_rows: data.invoices.length,
+        parsed_rows: data.invoices.length,
+        failed_rows: 0,
+        parse_quality_score: 100,
+        column_map: [],
+        warnings: [],
+        status: "imported",
+        uploaded_by: userId,
+      } as never)
+      .select("id")
+      .single();
+
+    await supabaseAdmin
+      .from("invoices")
+      .delete()
+      .eq("company_id", companyId)
+      .is("project_id", null)
+      .is("milestone_id", null);
+
     // Upsert customers
     const customerIds = new Map<string, string>();
     const uniqueCustomers = new Map<string, string>();
@@ -80,7 +106,7 @@ export const commitImport = createServerFn({ method: "POST" })
     }
 
     // Insert invoices
-    const invoiceRows = data.invoices.map((inv) => {
+    const invoiceRows = data.invoices.map((inv, index) => {
       const name = (inv.customerName?.trim() || "Unknown");
       return {
         company_id: companyId,
@@ -89,6 +115,7 @@ export const commitImport = createServerFn({ method: "POST" })
         invoice_date: inv.invoiceDate,
         due_date: inv.dueDate,
         status: "open",
+        external_ref: upload?.id ? `upload:${upload.id}:${index + 1}` : null,
       };
     });
     const { error: invErr } = await supabaseAdmin.from("invoices").insert(invoiceRows as never);
