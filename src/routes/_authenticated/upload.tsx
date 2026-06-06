@@ -771,7 +771,7 @@ function ColumnMappingsTab() {
 
   const rows = (q.data?.mappings ?? []).filter((r) => (filter === "all" ? true : r.status === filter));
   const learned = (q.data?.mappings ?? []).filter((m) => m.status === "approved").length;
-  const aiCalls = (q.data?.mappings ?? []).filter((m) => m.source === "openai").length;
+  const aiCalls = (q.data?.mappings ?? []).filter((m) => m.source === "ai" || m.source === "openai").length;
 
   return (
     <div className="space-y-4">

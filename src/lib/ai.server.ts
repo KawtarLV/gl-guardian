@@ -1,26 +1,44 @@
-// Server-only OpenAI helpers. Never import from client code.
+// Server-only AI helpers — all calls route through Lovable AI Gateway.
+// Never import from client code.
 import { GL_CATEGORIES, CATEGORY_HINTS_DUTCH, type GlCategory } from "./categories";
 
-const OPENAI_URL = "https://api.openai.com/v1";
+const LOVABLE_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const DEFAULT_MODEL = "google/gemini-3-flash-preview";
 
-function key() {
-  const k = process.env.OPENAI_API_KEY;
-  if (!k) throw new Error("OPENAI_API_KEY is not set");
+function lovableKey() {
+  const k = process.env.LOVABLE_API_KEY;
+  if (!k) throw new Error("LOVABLE_API_KEY is not set");
   return k;
 }
 
-export async function embedText(text: string): Promise<number[]> {
-  const res = await fetch(`${OPENAI_URL}/embeddings`, {
+async function callLovable(body: Record<string, unknown>): Promise<string> {
+  const res = await fetch(LOVABLE_URL, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${key()}`,
       "Content-Type": "application/json",
+      "Lovable-API-Key": lovableKey(),
+      "X-Lovable-AIG-SDK": "vercel-ai-sdk",
     },
-    body: JSON.stringify({ model: "text-embedding-3-small", input: text }),
+    body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`OpenAI embedding failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) {
+    const text = await res.text();
+    if (res.status === 429) throw new Error("AI rate limit reached — please retry in a moment");
+    if (res.status === 402) throw new Error("AI credits exhausted — top up in Settings → Workspace → Usage");
+    throw new Error(`Lovable AI error ${res.status}: ${text}`);
+  }
   const data = await res.json();
-  return data.data[0].embedding as number[];
+  return (data.choices?.[0]?.message?.content ?? "") as string;
+}
+
+// Embeddings are not used in the current flow. Callers wrap this in try/catch
+// and fall back to the rule engine + AI classification path.
+export async function embedText(_text: string): Promise<number[]> {
+  throw new Error("Embeddings disabled — using rule engine + AI fallback instead");
+}
+
+export function toVectorLiteral(vec: number[]): string {
+  return `[${vec.join(",")}]`;
 }
 
 export interface AiClassification {
@@ -39,33 +57,37 @@ Allowed categories (return EXACTLY one): ${GL_CATEGORIES.join(", ")}.
 ${CATEGORY_HINTS_DUTCH}
 Rules:
 - Primary signal is the account DESCRIPTION (not the number).
-- Output strict JSON: {"category": "<one of allowed>", "confidence": 0.0-1.0, "reasoning": "<short>", "needs_review": true|false}.
+- Output strict JSON ONLY (no prose, no code fences): {"category": "<one of allowed>", "confidence": 0.0-1.0, "reasoning": "<short>", "needs_review": true|false}.
 - needs_review must be true when confidence < 0.75.
 - Never invent a category; if unsure use "Other".`;
 
   const user = `Account number: ${accountNumber ?? "(none)"}
 Description: ${description}`;
 
-  const res = await fetch(`${OPENAI_URL}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-    }),
+  const content = await callLovable({
+    model: DEFAULT_MODEL,
+    temperature: 0,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
   });
-  if (!res.ok) throw new Error(`OpenAI classify failed: ${res.status} ${await res.text()}`);
-  const data = await res.json();
-  const raw = JSON.parse(data.choices[0].message.content);
-  const category = GL_CATEGORIES.includes(raw.category) ? raw.category : "Other";
+
+  // Strip code fences if the model added them
+  const cleaned = content.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
+  const jsonStart = cleaned.indexOf("{");
+  const jsonEnd = cleaned.lastIndexOf("}");
+  const jsonStr = jsonStart >= 0 ? cleaned.slice(jsonStart, jsonEnd + 1) : cleaned;
+
+  let raw: { category?: string; confidence?: number; reasoning?: string; needs_review?: boolean };
+  try {
+    raw = JSON.parse(jsonStr);
+  } catch {
+    raw = {};
+  }
+  const category = (GL_CATEGORIES as readonly string[]).includes(raw.category ?? "")
+    ? (raw.category as GlCategory)
+    : ("Other" as GlCategory);
   const confidence = Math.max(0, Math.min(1, Number(raw.confidence) || 0));
   return {
     category,
@@ -80,55 +102,32 @@ export async function chatCompletion(
   user: string,
   opts: { model?: string; temperature?: number } = {},
 ): Promise<string> {
-  const res = await fetch(`${OPENAI_URL}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: opts.model ?? "gpt-4o-mini",
-      temperature: opts.temperature ?? 0.2,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-    }),
+  return await callLovable({
+    model: opts.model ?? DEFAULT_MODEL,
+    temperature: opts.temperature ?? 0.2,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
   });
-  if (!res.ok) throw new Error(`OpenAI chat failed: ${res.status} ${await res.text()}`);
-  const data = await res.json();
-  return data.choices[0].message.content as string;
 }
 
-/** Call Lovable AI Gateway (default: Gemini 3 Flash). Returns null when LOVABLE_API_KEY is not set. */
+/** Legacy helper kept for compatibility with universal-parser.functions.ts. */
 export async function lovableAi(
   prompt: string,
   opts: { model?: string; system?: string; temperature?: number } = {},
 ): Promise<string | null> {
-  const k = process.env.LOVABLE_API_KEY;
-  if (!k) return null;
   const messages: { role: string; content: string }[] = [];
   if (opts.system) messages.push({ role: "system", content: opts.system });
   messages.push({ role: "user", content: prompt });
-  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Lovable-API-Key": k,
-      "X-Lovable-AIG-SDK": "vercel-ai-sdk",
-    },
-    body: JSON.stringify({
-      model: opts.model ?? "google/gemini-3-flash-preview",
+  try {
+    return await callLovable({
+      model: opts.model ?? DEFAULT_MODEL,
       messages,
       temperature: opts.temperature ?? 0,
-    }),
-  });
-  if (!res.ok) throw new Error(`Lovable AI error ${res.status}: ${await res.text()}`);
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content ?? null;
-}
-
-// pgvector accepts a text representation like '[0.1,0.2,...]'
-export function toVectorLiteral(vec: number[]): string {
-  return `[${vec.join(",")}]`;
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message.includes("LOVABLE_API_KEY is not set")) return null;
+    throw e;
+  }
 }
