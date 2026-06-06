@@ -39,7 +39,7 @@ export const parseExcel = createServerFn({ method: "POST" })
       rowCount: s.rows.length,
       shape: detectShape(s),
       glAccounts: extractGlRows(s),
-      invoices: extractInvoiceRows(s).slice(0, 500),
+      invoices: extractInvoiceRows(s),
       journalRows: extractJournalRows(s),
     }));
   });
