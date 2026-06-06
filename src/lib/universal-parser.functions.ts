@@ -23,7 +23,7 @@ export interface ColumnDetectionResult {
   original_name: string;
   standard_field: StandardField;
   confidence: number;
-  source: "rule_engine" | "sample_analysis" | "previous_approval" | "claude" | "unknown";
+  source: "rule_engine" | "sample_analysis" | "previous_approval" | "ai" | "unknown";
   needs_review: boolean;
   reasoning?: string;
   mapping_id?: string;
