@@ -82,13 +82,20 @@ export const COLUMN_ALIASES: Record<string, StandardField> = {
   withdrawal: "debet",
   kosten: "debet",
 
-  // Credit
+  // Credit (also accept single "amount" columns from invoice-shape exports —
+  // treated as a positive revenue line by the commit step)
   credit: "credit",
   bij: "credit",
   ontvangst: "credit",
   "credit amount": "credit",
   deposit: "credit",
   inkomsten: "credit",
+  amount: "credit",
+  bedrag: "credit",
+  totaal: "credit",
+  total: "credit",
+  saldo: "credit",
+  value: "credit",
 
   // Description
   boekingstekst: "description",

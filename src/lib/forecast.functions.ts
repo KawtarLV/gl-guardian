@@ -202,6 +202,24 @@ export const getProjectsList = createServerFn({ method: "GET" })
     return JSON.parse(JSON.stringify(out)) as any;
   });
 
+export const getLatestUpload = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: mem } = await supabaseAdmin
+      .from("company_members").select("company_id").eq("user_id", userId).maybeSingle();
+    if (!mem?.company_id) return null;
+    const { data: upload } = await supabaseAdmin
+      .from("file_uploads")
+      .select("id, filename, total_rows, parsed_rows, uploaded_at, file_structure, parse_quality_score")
+      .eq("company_id", mem.company_id)
+      .order("uploaded_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return upload ?? null;
+  });
+
 export const copilotAsk = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => CopilotInput.parse(d))

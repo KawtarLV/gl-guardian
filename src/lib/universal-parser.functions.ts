@@ -730,6 +730,7 @@ export const commitUniversalImport = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { userId } = context;
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { CUSTOMER_TYPE_DEFAULT_LAG } = await import("./categories");
 
     const { data: mem } = await supabaseAdmin
       .from("company_members")
@@ -739,13 +740,47 @@ export const commitUniversalImport = createServerFn({ method: "POST" })
     const companyId = mem?.company_id as string | undefined;
     if (!companyId) throw new Error("No company membership found for user");
 
+    // ── Upsert one customer per unique customer_code / customer_name found in the file.
+    // Mirrors the legacy demo-import flow so invoice-shape files (no account_code,
+    // customer column instead) still produce real customer records the forecast can use.
+    const inferType = (name: string): string => {
+      const n = name.toLowerCase();
+      if (/woningstichting|woningcorporatie|woningbouw|housing/.test(n)) return "housing_corp";
+      if (/\b(bv|b\.v\.|nv|n\.v\.|gmbh|ltd|inc|holding)\b/.test(n)) return "commercial";
+      if (/particulier|dhr\.|mevr\.|familie|fam\./.test(n)) return "small_repair";
+      return "unknown";
+    };
+
+    const uniqueCustomers = new Map<string, string>();
+    for (const t of data.transactions) {
+      const name = (t.customer_code ?? "").trim();
+      if (!name) continue;
+      uniqueCustomers.set(name.toLowerCase(), name);
+    }
+    const customerIds = new Map<string, string>();
+    for (const [key, name] of uniqueCustomers) {
+      const type = inferType(name);
+      const lag = CUSTOMER_TYPE_DEFAULT_LAG[type] ?? 30;
+      const { data: existing } = await supabaseAdmin
+        .from("customers").select("id")
+        .eq("company_id", companyId).eq("name", name).maybeSingle();
+      if (existing?.id) { customerIds.set(key, existing.id); continue; }
+      const { data: ins } = await supabaseAdmin
+        .from("customers").insert({
+          company_id: companyId, name, customer_type: type, avg_payment_lag_days: lag,
+        } as never).select("id").single();
+      if (ins?.id) customerIds.set(key, ins.id);
+    }
+
     const today = new Date().toISOString().slice(0, 10);
     const rows = data.transactions
       .map((t, index) => {
         const amount = t.credit !== 0 ? t.credit : -t.debet;
         if (amount === 0) return null;
+        const custKey = (t.customer_code ?? "").trim().toLowerCase();
         return {
           company_id: companyId,
+          customer_id: custKey ? customerIds.get(custKey) ?? null : null,
           amount,
           invoice_date: t.date ?? today,
           status: "open" as const,
@@ -782,5 +817,5 @@ export const commitUniversalImport = createServerFn({ method: "POST" })
         .eq("id", data.uploadId);
     }
 
-    return { inserted };
+    return { inserted, customers: customerIds.size };
   });

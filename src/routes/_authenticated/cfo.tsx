@@ -11,6 +11,7 @@ import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGri
 import { toast } from "sonner";
 import { getOrCreateCompany } from "@/lib/company.functions";
 import { recomputeForecast, getForecast, type Scenario } from "@/lib/forecast-engine.functions";
+import { SourceBanner } from "@/components/source-banner";
 
 export const Route = createFileRoute("/_authenticated/cfo")({
   head: () => ({ meta: [{ title: "CFO Dashboard — 13-week cashflow" }] }),
@@ -99,6 +100,7 @@ function CfoPage() {
 
   return (
     <div className="p-6 space-y-6">
+      <SourceBanner />
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">CFO Dashboard</h1>
