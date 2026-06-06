@@ -741,7 +741,7 @@ export const commitUniversalImport = createServerFn({ method: "POST" })
 
     const today = new Date().toISOString().slice(0, 10);
     const rows = data.transactions
-      .map((t) => {
+      .map((t, index) => {
         const amount = t.credit !== 0 ? t.credit : -t.debet;
         if (amount === 0) return null;
         return {
@@ -749,7 +749,7 @@ export const commitUniversalImport = createServerFn({ method: "POST" })
           amount,
           invoice_date: t.date ?? today,
           status: "open" as const,
-          external_ref: t.invoice_number ?? null,
+          external_ref: data.uploadId ? `upload:${data.uploadId}:${t.invoice_number ?? index + 1}` : t.invoice_number ?? null,
           gl_category: t.account_code ?? null,
         };
       })
