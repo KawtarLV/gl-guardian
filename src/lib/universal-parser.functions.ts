@@ -347,6 +347,10 @@ export const parseFileUniversal = createServerFn({ method: "POST" })
         if (insertRows.length) {
           await supabaseAdmin
             .from("monthly_summaries" as never)
+            .delete()
+            .eq("company_id", companyId);
+          await supabaseAdmin
+            .from("monthly_summaries" as never)
             .upsert(insertRows as never, {
               onConflict: "company_id,account_code,account_description,period,source_file",
             } as never);
@@ -623,7 +627,7 @@ Reply ONLY as valid JSON: {"field": "...", "confidence": 0.0-1.0, "reasoning": "
       headerRowIndex: headerIndex,
       fileContext: mergedContext,
       detections,
-      transactions: transactions.slice(0, 1000),
+      transactions,
       transactionCount: transactions.length,
       qualityScore,
       needsAIReview,
@@ -737,7 +741,7 @@ export const commitUniversalImport = createServerFn({ method: "POST" })
 
     const today = new Date().toISOString().slice(0, 10);
     const rows = data.transactions
-      .map((t) => {
+      .map((t, index) => {
         const amount = t.credit !== 0 ? t.credit : -t.debet;
         if (amount === 0) return null;
         return {
@@ -745,13 +749,20 @@ export const commitUniversalImport = createServerFn({ method: "POST" })
           amount,
           invoice_date: t.date ?? today,
           status: "open" as const,
-          external_ref: t.invoice_number ?? null,
+          external_ref: data.uploadId ? `upload:${data.uploadId}:${t.invoice_number ?? index + 1}` : t.invoice_number ?? null,
           gl_category: t.account_code ?? null,
         };
       })
       .filter((r): r is NonNullable<typeof r> => r !== null);
 
     if (rows.length === 0) throw new Error("No importable rows (all zero-amount)");
+
+    await supabaseAdmin
+      .from("invoices")
+      .delete()
+      .eq("company_id", companyId)
+      .is("project_id", null)
+      .is("milestone_id", null);
 
     let inserted = 0;
     const chunkSize = 500;
