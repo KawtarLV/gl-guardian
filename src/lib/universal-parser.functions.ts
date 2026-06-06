@@ -366,18 +366,18 @@ export const listColumnMappings = createServerFn({ method: "GET" })
       .limit(500);
 
     return {
-      mappings: (data ?? []) as Array<{
-        id: string;
-        company_id: string | null;
-        source_column_name: string;
-        normalised_column_name: string | null;
-        standard_field: string | null;
-        confidence: number | null;
-        source: string | null;
-        status: string | null;
-        sample_values: unknown;
-        reasoning: string | null;
-        approved_at: string | null;
-      }>,
+      mappings: (data ?? []).map((m: Record<string, unknown>) => ({
+        id: String(m.id),
+        company_id: (m.company_id as string | null) ?? null,
+        source_column_name: String(m.source_column_name ?? ""),
+        normalised_column_name: (m.normalised_column_name as string | null) ?? null,
+        standard_field: (m.standard_field as string | null) ?? null,
+        confidence: m.confidence == null ? null : Number(m.confidence),
+        source: (m.source as string | null) ?? null,
+        status: (m.status as string | null) ?? null,
+        sample_values: Array.isArray(m.sample_values) ? (m.sample_values as unknown[]).map(String) : [],
+        reasoning: (m.reasoning as string | null) ?? null,
+        approved_at: (m.approved_at as string | null) ?? null,
+      })),
     };
   });
