@@ -77,10 +77,6 @@ export interface InvoiceExtraction {
 }
 
 function toDateString(v: unknown): string | null {
-  // Delegate to shared parser to avoid bundler quirks with XLSX.SSF.
-  // Lazy require to keep this file self-contained.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { parseDate } = require("./date-parser") as typeof import("./date-parser");
   return parseDate(v as string | number | null | undefined);
 }
 
