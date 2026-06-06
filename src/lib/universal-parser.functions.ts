@@ -615,6 +615,7 @@ Reply ONLY as valid JSON: {"field": "...", "confidence": 0.0-1.0, "reasoning": "
     }
 
     return {
+      type: datasetType,
       uploadId,
       companyId,
       headers,
@@ -626,6 +627,12 @@ Reply ONLY as valid JSON: {"field": "...", "confidence": 0.0-1.0, "reasoning": "
       transactionCount: transactions.length,
       qualityScore,
       needsAIReview,
+      monthlySummary: [] as Array<{
+        account_code: string;
+        account_description: string;
+        monthly_totals: Record<string, number>;
+        annual_total: number;
+      }>,
       reconciliation: {
         total_credit: Math.round(totalCredit * 100) / 100,
         total_debet: Math.round(totalDebet * 100) / 100,
