@@ -191,6 +191,21 @@ const ApproveMappingInput = z.object({
   applyGlobal: z.boolean().default(false),
 });
 
+const CommitImportInput = z.object({
+  uploadId: z.string().uuid().nullable().optional(),
+  transactions: z.array(
+    z.object({
+      account_code: z.string().nullable(),
+      date: z.string().nullable(),
+      invoice_number: z.string().nullable(),
+      customer_code: z.string().nullable(),
+      debet: z.number(),
+      credit: z.number(),
+      description: z.string().nullable(),
+    }),
+  ).min(1),
+});
+
 // ── Server fn: parse file end-to-end ─────────────────────────────────
 export const parseFileUniversal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
