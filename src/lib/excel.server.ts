@@ -121,7 +121,70 @@ export function extractInvoiceRows(sheet: ParsedSheet): InvoiceExtraction[] {
   return out;
 }
 
-export function detectShape(sheet: ParsedSheet): "gl" | "invoices" | "unknown" {
+export interface JournalExtraction {
+  rekening: string;
+  trek: string | null;
+  datum: string;
+  amount: number; // credit - debet
+  description: string;
+}
+
+const DEBET_HEADERS = ["debet", "debit"];
+const CREDIT_HEADERS = ["credit", "kredit", "haben"];
+const JOURNAL_DATE_HEADERS = ["datum", "date"];
+const TREK_HEADERS = ["trek", "relatie", "relation", "klantnr", "debiteur"];
+const BOEKINGSTEKST_HEADERS = ["boekingstekst", "omschrijving", "description", "memo"];
+const BOEKNR_HEADERS = ["boeknummer", "boeknr", "journal", "journaal"];
+const DAGBOEK_HEADERS = ["dagboek", "daybook"];
+const REKENING_HEADERS = ["rekening", "grootboek", "grootboeknummer"];
+
+export function detectJournalShape(sheet: ParsedSheet): boolean {
+  const hasRekening = !!findHeader(sheet.headers, REKENING_HEADERS);
+  const hasDebOrCred =
+    !!findHeader(sheet.headers, DEBET_HEADERS) || !!findHeader(sheet.headers, CREDIT_HEADERS);
+  const hasBoeknr = !!findHeader(sheet.headers, BOEKNR_HEADERS);
+  return hasRekening && hasDebOrCred && hasBoeknr;
+}
+
+export function extractJournalRows(sheet: ParsedSheet): JournalExtraction[] {
+  const rekCol = findHeader(sheet.headers, REKENING_HEADERS);
+  const dateCol = findHeader(sheet.headers, JOURNAL_DATE_HEADERS);
+  const debCol = findHeader(sheet.headers, DEBET_HEADERS);
+  const credCol = findHeader(sheet.headers, CREDIT_HEADERS);
+  const trekCol = findHeader(sheet.headers, TREK_HEADERS);
+  const textCol = findHeader(sheet.headers, BOEKINGSTEKST_HEADERS);
+  const boekCol = findHeader(sheet.headers, BOEKNR_HEADERS);
+  const dagCol = findHeader(sheet.headers, DAGBOEK_HEADERS);
+  if (!rekCol || !dateCol) return [];
+  const out: JournalExtraction[] = [];
+  for (const row of sheet.rows) {
+    const rek = row[rekCol];
+    const date = toDateString(row[dateCol]);
+    if (!rek || !date) continue;
+    const deb = debCol ? Number(row[debCol]) || 0 : 0;
+    const cred = credCol ? Number(row[credCol]) || 0 : 0;
+    const amount = cred - deb;
+    if (!isFinite(amount) || amount === 0) continue;
+    const trekRaw = trekCol ? row[trekCol] : null;
+    const trek = trekRaw != null && String(trekRaw).trim() !== "" ? String(trekRaw).trim() : null;
+    const text = textCol && row[textCol] ? String(row[textCol]).trim() : "";
+    const boek = boekCol && row[boekCol] ? String(row[boekCol]).trim() : "";
+    const dag = dagCol && row[dagCol] ? String(row[dagCol]).trim() : "";
+    const tail = dag && boek ? `${dag} ${boek}` : dag || boek;
+    const description = [text, tail].filter(Boolean).join(" · ");
+    out.push({
+      rekening: String(rek).trim(),
+      trek,
+      datum: date,
+      amount,
+      description: description || "Boeking",
+    });
+  }
+  return out;
+}
+
+export function detectShape(sheet: ParsedSheet): "gl" | "invoices" | "journal" | "unknown" {
+  if (detectJournalShape(sheet)) return "journal";
   const hasAccountDesc = !!findHeader(sheet.headers, ACCOUNT_DESC_HEADERS);
   const hasAccountNumber = !!findHeader(sheet.headers, ACCOUNT_NUMBER_HEADERS);
   const hasAmount = !!findHeader(sheet.headers, AMOUNT_HEADERS);
@@ -131,3 +194,4 @@ export function detectShape(sheet: ParsedSheet): "gl" | "invoices" | "unknown" {
   if (hasAccountDesc) return "gl";
   return "unknown";
 }
+

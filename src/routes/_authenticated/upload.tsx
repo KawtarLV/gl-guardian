@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Upload, CheckCircle2, AlertTriangle, Loader2, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { parseExcel, classifyAccounts, saveClassifications, getMappingsSummary } from "@/lib/mapping.functions";
-import { previewImport, commitImport } from "@/lib/demo-import.functions";
+import { previewImport, commitImport, previewJournalImport, commitJournalImport } from "@/lib/demo-import.functions";
 import { GL_CATEGORIES } from "@/lib/categories";
 
 export const Route = createFileRoute("/_authenticated/upload")({
@@ -270,15 +270,28 @@ type DemoInvoice = {
   description: string | null;
 };
 
+type JournalRow = {
+  rekening: string;
+  trek: string | null;
+  datum: string;
+  amount: number;
+  description: string;
+};
+
 function DemoDataTab() {
   const parse = useServerFn(parseExcel);
   const preview = useServerFn(previewImport);
   const commit = useServerFn(commitImport);
+  const previewJ = useServerFn(previewJournalImport);
+  const commitJ = useServerFn(commitJournalImport);
   const toB64 = useFileToBase64();
   const qc = useQueryClient();
 
+  const [mode, setMode] = useState<"invoices" | "journal" | null>(null);
   const [invoices, setInvoices] = useState<DemoInvoice[]>([]);
+  const [journalRows, setJournalRows] = useState<JournalRow[]>([]);
   const [previewData, setPreviewData] = useState<Awaited<ReturnType<typeof previewImport>> | null>(null);
+  const [journalPreview, setJournalPreview] = useState<Awaited<ReturnType<typeof previewJournalImport>> | null>(null);
 
   const parseM = useMutation({
     mutationFn: async (file: File) => {
@@ -286,15 +299,29 @@ function DemoDataTab() {
       return parse({ data: { fileBase64, filename: file.name } });
     },
     onSuccess: async (data) => {
-      const inv = data.flatMap((s) => s.invoices);
-      if (inv.length === 0) {
-        toast.error("No invoice-shaped rows detected in the file");
+      // Reset
+      setMode(null); setInvoices([]); setJournalRows([]); setPreviewData(null); setJournalPreview(null);
+
+      const journal = data.flatMap((s) => (s.shape === "journal" ? s.journalRows : []));
+      const inv = data.flatMap((s) => (s.shape === "invoices" ? s.invoices : []));
+
+      if (journal.length > 0 && inv.length === 0) {
+        setMode("journal");
+        setJournalRows(journal);
+        const p = await previewJ({ data: { rows: journal } });
+        setJournalPreview(p);
+        toast.success(`GL journal detected · ${journal.length} postings · ${p.customerCount} relations`);
         return;
       }
-      setInvoices(inv);
-      const p = await preview({ data: { invoices: inv } });
-      setPreviewData(p);
-      toast.success(`Detected ${inv.length} invoices across ${p.customerCount} customers`);
+      if (inv.length > 0) {
+        setMode("invoices");
+        setInvoices(inv);
+        const p = await preview({ data: { invoices: inv } });
+        setPreviewData(p);
+        toast.success(`Detected ${inv.length} invoices across ${p.customerCount} customers`);
+        return;
+      }
+      toast.error("No invoice or journal rows detected in the file");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -303,6 +330,15 @@ function DemoDataTab() {
     mutationFn: () => commit({ data: { invoices } }),
     onSuccess: (r) => {
       toast.success(`Imported ${r.customers} customers + ${r.invoices} invoices`);
+      qc.invalidateQueries();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const commitJM = useMutation({
+    mutationFn: () => commitJ({ data: { rows: journalRows } }),
+    onSuccess: (r) => {
+      toast.success(`Imported ${r.customers} synthetic customers · ${r.invoices} postings · ${r.mappings} GL mapping(s)`);
       qc.invalidateQueries();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -325,17 +361,17 @@ function DemoDataTab() {
             >
               <input {...getInputProps()} />
               <Upload className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
-              <p className="text-sm">{parseM.isPending ? "Parsing…" : "Drop an invoice export (.xlsx) — we'll auto-create customers and invoices."}</p>
+              <p className="text-sm">{parseM.isPending ? "Parsing…" : "Drop an invoice or GL journal export (.xlsx) — we auto-detect the shape."}</p>
             </div>
           </CardContent>
         </Card>
 
-        {previewData && (
+        {mode === "invoices" && previewData && (
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Preview</CardTitle>
+                  <CardTitle>Invoice preview</CardTitle>
                   <CardDescription>
                     {previewData.customerCount} customers · {previewData.invoiceCount} invoices · €{previewData.totalAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })} total
                   </CardDescription>
@@ -365,14 +401,67 @@ function DemoDataTab() {
             </CardContent>
           </Card>
         )}
+
+        {mode === "journal" && journalPreview && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>GL journal preview</CardTitle>
+                  <CardDescription>
+                    {journalPreview.postings} postings · {journalPreview.accounts.length} account(s) · {journalPreview.customerCount} synthetic customers · net €{journalPreview.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </CardDescription>
+                </div>
+                <Button onClick={() => commitJM.mutate()} disabled={commitJM.isPending}>
+                  {commitJM.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Commit journal import
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
+                <strong>Heads up:</strong> this is a transaction journal, not an invoice list. We create one
+                synthetic customer per relation ID (<code>Trek</code>). For named customers, upload an
+                Open Posten / Debiteuren export instead.
+              </div>
+              <div>
+                <div className="text-xs uppercase text-muted-foreground mb-2">Accounts</div>
+                <div className="flex flex-wrap gap-2">
+                  {journalPreview.accounts.map((a) => (
+                    <Badge key={a.rekening} variant="outline" className="font-mono">
+                      {a.rekening} · €{a.net.toLocaleString(undefined, { maximumFractionDigits: 0 })} ({a.postings})
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-xs uppercase text-muted-foreground text-left">
+                    <tr><th className="py-2 pr-3">Customer (synthetic)</th><th className="py-2 pr-3">Trek</th><th className="py-2 pr-3">Postings</th><th className="py-2 pr-3 text-right">Net</th></tr>
+                  </thead>
+                  <tbody>
+                    {journalPreview.customers.map((c) => (
+                      <tr key={c.name} className="border-t">
+                        <td className="py-2 pr-3">{c.name}</td>
+                        <td className="py-2 pr-3 font-mono text-xs text-muted-foreground">{c.trek ?? "—"}</td>
+                        <td className="py-2 pr-3">{c.postings}</td>
+                        <td className="py-2 pr-3 text-right font-mono">€{c.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
       <div>
         <Card>
           <CardHeader><CardTitle>How this works</CardTitle></CardHeader>
           <CardContent className="text-sm text-muted-foreground space-y-2">
-            <p>Heuristics detect invoice-shaped sheets (amount + date columns).</p>
-            <p>Customer type is inferred from name patterns (e.g. <code>BV</code> → commercial, <code>woningstichting</code> → housing corp).</p>
-            <p>Default payment lag is assigned by type so the forecast becomes usable immediately.</p>
+            <p><strong>Invoice mode:</strong> detects amount + date + customer columns; infers customer type from name (<code>BV</code> → commercial, <code>woningstichting</code> → housing corp).</p>
+            <p><strong>Journal mode:</strong> detects <code>Rekening</code> + <code>Boeknummer</code> + <code>Debet</code>/<code>Credit</code>; creates synthetic customers per relation ID and seeds a GL mapping per account.</p>
+            <p>Default payment lag (30 days) is applied so the forecast becomes usable immediately.</p>
             <p>Then head to <a className="text-accent underline" href="/forecast">Forecast</a> to generate the 13-week run.</p>
           </CardContent>
         </Card>
@@ -380,3 +469,4 @@ function DemoDataTab() {
     </div>
   );
 }
+
