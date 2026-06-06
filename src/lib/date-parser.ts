@@ -19,29 +19,14 @@ export function parseDate(raw: string | number | null | undefined): string | nul
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
   if (/^\d{4}-\d{2}-\d{2}T/.test(str)) return str.slice(0, 10);
 
-  // DD/MM/YYYY
-  let m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-  if (m) {
-    const [, d, mo, y] = m;
+  // DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY (separators are interchangeable)
+  const sep = str.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  if (sep) {
+    const [, d, mo, y] = sep;
     const yr = y.length === 2 ? `20${y}` : y;
     return `${yr}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
   }
 
-  // DD-MM-YYYY
-  m = str.match(/^(\d{1,2})-(\d{1,2})-(\d{2,4})$/);
-  if (m) {
-    const [, d, mo, y] = m;
-    const yr = y.length === 2 ? `20${y}` : y;
-    return `${yr}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
-  }
-
-  // DD.MM.YYYY
-  m = str.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
-  if (m) {
-    const [, d, mo, y] = m;
-    const yr = y.length === 2 ? `20${y}` : y;
-    return `${yr}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
-  }
 
   // YYYYMMDD
   m = str.match(/^(\d{4})(\d{2})(\d{2})$/);
