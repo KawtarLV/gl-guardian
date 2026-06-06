@@ -126,7 +126,9 @@ export const getLatestForecast = createServerFn({ method: "GET" })
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (!run) return null;
     const { data: weeks } = await supabaseAdmin
-      .from("forecast_weeks").select("*").eq("forecast_run_id", run.id)
+      .from("forecast_weeks").select("*")
+      .eq("forecast_run_id", run.id)
+      .eq("scenario", "legacy")
       .order("week_number", { ascending: true });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return JSON.parse(JSON.stringify({ run, weeks: weeks ?? [] })) as any;
