@@ -718,6 +718,53 @@ export type Database = {
           },
         ]
       }
+      monthly_summaries: {
+        Row: {
+          account_code: string | null
+          account_description: string
+          company_id: string
+          created_at: string
+          id: string
+          period: string
+          source_file: string | null
+          total_credit: number
+          total_debet: number
+          updated_at: string
+        }
+        Insert: {
+          account_code?: string | null
+          account_description: string
+          company_id: string
+          created_at?: string
+          id?: string
+          period: string
+          source_file?: string | null
+          total_credit?: number
+          total_debet?: number
+          updated_at?: string
+        }
+        Update: {
+          account_code?: string | null
+          account_description?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          period?: string
+          source_file?: string | null
+          total_credit?: number
+          total_debet?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "monthly_summaries_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payments: {
         Row: {
           amount: number

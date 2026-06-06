@@ -605,6 +605,41 @@ function SmartImportTab() {
             </Card>
           )}
 
+          {result.type === "monthly_summary" ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Monthly summary detected</CardTitle>
+                <CardDescription>
+                  {result.monthlySummary.length} account rows imported. Stored as monthly aggregates for seasonal forecasting and reconciliation.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-xs uppercase text-muted-foreground text-left">
+                    <tr>
+                      <th className="py-2 pr-3">Account code</th>
+                      <th className="py-2 pr-3">Description</th>
+                      <th className="py-2 pr-3">Months with data</th>
+                      <th className="py-2 pr-3 text-right">Annual total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.monthlySummary.map((row, i) => (
+                      <tr key={i} className="border-t">
+                        <td className="py-2 pr-3 font-mono">{row.account_code || "—"}</td>
+                        <td className="py-2 pr-3">{row.account_description}</td>
+                        <td className="py-2 pr-3">{Object.keys(row.monthly_totals).length}</td>
+                        <td className="py-2 pr-3 text-right font-mono">€{row.annual_total.toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+
+
           {/* Quality score panel */}
           <Card>
             <CardHeader>
@@ -692,7 +727,10 @@ function SmartImportTab() {
               <div>Rows: {result.reconciliation.row_count}</div>
             </CardContent>
           </Card>
+            </>
+          )}
         </>
+
       )}
     </div>
   );

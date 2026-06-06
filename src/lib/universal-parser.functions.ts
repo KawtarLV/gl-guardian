@@ -52,17 +52,55 @@ const HEADER_KEYWORDS = [
   "description", "btw", "vat", "relatie", "klant", "factuurnummer",
 ];
 
+const MONTH_NAMES = [
+  "jan", "feb", "mrt", "mar", "apr", "mei", "may", "jun",
+  "jul", "aug", "sep", "okt", "oct", "nov", "dec",
+];
+const MONTH_TO_NUM: Record<string, string> = {
+  jan: "01", feb: "02", mrt: "03", mar: "03", apr: "04",
+  mei: "05", may: "05", jun: "06", jul: "07", aug: "08",
+  sep: "09", okt: "10", oct: "10", nov: "11", dec: "12",
+};
+
+export type DatasetType = "monthly_summary" | "gl_statement" | "transaction_ledger" | "unknown";
+
 interface HeaderDetection {
+  datasetType: DatasetType;
   headerIndex: number;
   dataStartIndex: number;
   context: FileContext;
+  skipColumns: number[];
 }
 
-/** Skip metadata rows at the top of the file; find the row with real column headers
- *  and extract file context (company, account, year, period range). */
+/** Skip metadata rows; detect dataset type; find real header row; extract context. */
 export function findHeaderRow(allRows: string[][]): HeaderDetection {
   const context: FileContext = {};
 
+  // ── TYPE A: Monthly summary — month names as column headers ──────
+  for (let i = 0; i < Math.min(allRows.length, 5); i++) {
+    const row = allRows[i] ?? [];
+    const monthCount = row.filter((cell) => {
+      const n = String(cell ?? "").toLowerCase().trim().slice(0, 3);
+      return MONTH_NAMES.includes(n);
+    }).length;
+    if (monthCount >= 6) {
+      const skipColumns: number[] = [];
+      row.forEach((cell, idx) => {
+        const t = String(cell ?? "").toLowerCase().trim();
+        if (t === "totaal" || t === "total") skipColumns.push(idx);
+      });
+      if (!row[0]?.trim()) skipColumns.push(0);
+      return {
+        datasetType: "monthly_summary",
+        headerIndex: i,
+        dataStartIndex: i + 1,
+        context,
+        skipColumns,
+      };
+    }
+  }
+
+  // ── TYPE B / C: Transaction rows ─────────────────────────────────
   for (let i = 0; i < Math.min(allRows.length, 30); i++) {
     const row = allRows[i] ?? [];
     const joined = row.join(" ");
@@ -76,7 +114,7 @@ export function findHeaderRow(allRows: string[][]): HeaderDetection {
     const yearMatch = joined.match(/boekjaar\s+(\d{4})/i);
     if (yearMatch) context.year = parseInt(yearMatch[1], 10);
 
-    const periodMatch = joined.match(/periode\s+(\d{1,2})\s*-\s*(\d{1,2})/i);
+    const periodMatch = joined.match(/periode\s+(\d{1,2})\s*[-–]\s*(\d{1,2})/i);
     if (periodMatch) {
       context.period_from = periodMatch[1];
       context.period_to = periodMatch[2];
@@ -89,10 +127,25 @@ export function findHeaderRow(allRows: string[][]): HeaderDetection {
     }).length;
 
     if (matchCount >= 3) {
-      return { headerIndex: i, dataStartIndex: i + 1, context };
+      const skipColumns: number[] = [];
+      row.forEach((cell, idx) => {
+        if (!String(cell ?? "").trim()) {
+          const hasData = allRows.slice(i + 1, i + 6).some(
+            (r) => String(r?.[idx] ?? "").trim(),
+          );
+          if (!hasData) skipColumns.push(idx);
+        }
+      });
+      return {
+        datasetType: i === 0 ? "transaction_ledger" : "gl_statement",
+        headerIndex: i,
+        dataStartIndex: i + 1,
+        context,
+        skipColumns,
+      };
     }
   }
-  return { headerIndex: 0, dataStartIndex: 1, context };
+  return { datasetType: "unknown", headerIndex: 0, dataStartIndex: 1, context, skipColumns: [] };
 }
 
 /** Layer 1b — identify a column from what its sample data looks like (no AI cost). */
@@ -232,8 +285,9 @@ export const parseFileUniversal = createServerFn({ method: "POST" })
     const sheet = sheets.find((s) => s.rows.length > 0) ?? sheets[0];
     if (!sheet) throw new Error("File contains no sheets");
 
-    // ── Find the real header row, skipping metadata ──────────────
-    const { headerIndex, dataStartIndex, context: fileContext } = findHeaderRow(sheet.rows);
+    // ── Find dataset type + real header row, skipping metadata ──
+    const { datasetType, headerIndex, dataStartIndex, context: fileContext, skipColumns } =
+      findHeaderRow(sheet.rows);
     const mergedContext: FileContext = { ...fileContext, ...(data.fileContext ?? {}) };
 
     const headers = (sheet.rows[headerIndex] ?? []).map((h) => (h ?? "").trim());
@@ -242,11 +296,125 @@ export const parseFileUniversal = createServerFn({ method: "POST" })
       .filter((r) => r.some((c) => c?.trim()))
       .map((r) => headers.map((_, i) => (r[i] ?? "").trim()));
 
+    // ── TYPE A: Monthly summary — different shape entirely ───────
+    if (datasetType === "monthly_summary") {
+      const year = mergedContext.year ?? new Date().getFullYear();
+      const monthCols: { idx: number; period: string }[] = [];
+      headers.forEach((h, idx) => {
+        if (skipColumns.includes(idx)) return;
+        const key = String(h ?? "").toLowerCase().trim().slice(0, 3);
+        const m = MONTH_TO_NUM[key];
+        if (m) monthCols.push({ idx, period: `${year}-${m}` });
+      });
+      const totalIdx = headers.findIndex((h) => {
+        const t = String(h ?? "").toLowerCase().trim();
+        return t === "totaal" || t === "total";
+      });
+
+      const summaryRows = rows
+        .map((row) => {
+          const firstCell = (row[0] ?? "").trim() || (row[1] ?? "").trim();
+          if (!firstCell) return null;
+          const m = firstCell.match(/^(\d{4,6})\s+(.+)$/);
+          const account_code = m ? m[1] : "";
+          const account_description = m ? m[2] : firstCell;
+          const monthly_totals: Record<string, number> = {};
+          for (const { idx, period } of monthCols) {
+            const v = parseAmount(row[idx]);
+            if (v !== 0) monthly_totals[period] = v;
+          }
+          const annual_total = totalIdx >= 0 ? parseAmount(row[totalIdx]) : 0;
+          return { account_code, account_description, monthly_totals, annual_total };
+        })
+        .filter(Boolean) as Array<{
+          account_code: string;
+          account_description: string;
+          monthly_totals: Record<string, number>;
+          annual_total: number;
+        }>;
+
+      if (companyId && summaryRows.length) {
+        const insertRows = summaryRows.flatMap((r) =>
+          Object.entries(r.monthly_totals).map(([period, amount]) => ({
+            company_id: companyId,
+            account_code: r.account_code || null,
+            account_description: r.account_description,
+            period,
+            total_credit: amount,
+            source_file: data.filename,
+          })),
+        );
+        if (insertRows.length) {
+          await supabaseAdmin
+            .from("monthly_summaries" as never)
+            .upsert(insertRows as never, {
+              onConflict: "company_id,account_code,account_description,period,source_file",
+            } as never);
+        }
+      }
+
+      return {
+        type: "monthly_summary" as const,
+        uploadId: null,
+        companyId,
+        headers,
+        sheetName: sheet.sheetName,
+        headerRowIndex: headerIndex,
+        fileContext: mergedContext,
+        detections: [] as ColumnDetectionResult[],
+        transactions: [] as ParsedTransaction[],
+        transactionCount: 0,
+        qualityScore: 100,
+        needsAIReview: [] as string[],
+        monthlySummary: summaryRows,
+        reconciliation: {
+          total_credit: Math.round(
+            summaryRows.reduce((s, r) => s + r.annual_total, 0) * 100,
+          ) / 100,
+          total_debet: 0,
+          row_count: summaryRows.length,
+        },
+      };
+    }
+
+
     // ── Detect each column ────────────────────────────────────────
     const detections: ColumnDetectionResult[] = [];
+    let rekeningSeen = 0;
     for (let idx = 0; idx < headers.length; idx++) {
       const header = headers[idx] || `(empty col ${idx + 1})`;
       const samples = rows.slice(0, 10).map((r) => r[idx] || "").filter((v) => v.trim()).slice(0, 5);
+
+      // Skip columns marked as irrelevant (empty headers with no data, etc.)
+      if (skipColumns.includes(idx)) {
+        detections.push({
+          original_name: header,
+          standard_field: "unknown",
+          confidence: 0,
+          source: "unknown",
+          needs_review: false,
+          reasoning: "Skipped — empty column",
+          sample_values: samples,
+        });
+        continue;
+      }
+
+      // Special case: duplicate "Rekening" in Type C — first = account_code, second = period
+      const normHeader = String(header).toLowerCase().trim();
+      if (normHeader === "rekening") {
+        const field: StandardField = rekeningSeen === 0 ? "account_code" : "period";
+        rekeningSeen++;
+        detections.push({
+          original_name: header,
+          standard_field: field,
+          confidence: 1.0,
+          source: "rule_engine",
+          needs_review: false,
+          reasoning: rekeningSeen === 1 ? `Duplicate "Rekening" — first occurrence treated as account code` : `Duplicate "Rekening" — second occurrence treated as period`,
+          sample_values: samples,
+        });
+        continue;
+      }
 
       // Layer 1: rule engine (skip if header is empty/__EMPTY)
       if (header && !header.startsWith("__EMPTY") && !header.startsWith("(empty")) {
@@ -447,6 +615,7 @@ Reply ONLY as valid JSON: {"field": "...", "confidence": 0.0-1.0, "reasoning": "
     }
 
     return {
+      type: datasetType,
       uploadId,
       companyId,
       headers,
@@ -458,6 +627,12 @@ Reply ONLY as valid JSON: {"field": "...", "confidence": 0.0-1.0, "reasoning": "
       transactionCount: transactions.length,
       qualityScore,
       needsAIReview,
+      monthlySummary: [] as Array<{
+        account_code: string;
+        account_description: string;
+        monthly_totals: Record<string, number>;
+        annual_total: number;
+      }>,
       reconciliation: {
         total_credit: Math.round(totalCredit * 100) / 100,
         total_debet: Math.round(totalDebet * 100) / 100,
