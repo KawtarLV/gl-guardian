@@ -727,7 +727,10 @@ function SmartImportTab() {
               <div>Rows: {result.reconciliation.row_count}</div>
             </CardContent>
           </Card>
+            </>
+          )}
         </>
+
       )}
     </div>
   );
