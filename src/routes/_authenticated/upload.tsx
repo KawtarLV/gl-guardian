@@ -563,6 +563,25 @@ function SmartImportTab() {
 
       {result && (
         <>
+          {/* File context banner — extracted from metadata rows */}
+          {(result.fileContext?.company_name || result.fileContext?.account_code || result.fileContext?.year) && (
+            <Card className="border-emerald-500/40 bg-emerald-500/5">
+              <CardContent className="p-4 flex items-center gap-3 text-sm">
+                <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
+                <div>
+                  <span className="font-medium">Detected from file:</span>{" "}
+                  {result.fileContext.company_name && <span>{result.fileContext.company_name}</span>}
+                  {result.fileContext.account_code && <span> · Account {result.fileContext.account_code}</span>}
+                  {result.fileContext.year && <span> · {result.fileContext.year}</span>}
+                  {result.fileContext.period_from && result.fileContext.period_to && (
+                    <span> · Periode {result.fileContext.period_from}–{result.fileContext.period_to}</span>
+                  )}
+                  <span className="text-muted-foreground"> · header row {result.headerRowIndex + 1}</span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Quality score panel */}
           <Card>
             <CardHeader>
