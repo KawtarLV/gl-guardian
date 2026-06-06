@@ -52,7 +52,6 @@ export const classifyAccounts = createServerFn({ method: "POST" })
     const { embedText, classifyAccount, toVectorLiteral } = await import("./ai.server");
     const { normalizeDescription } = await import("./categories");
 
-    // Resolve user's company
     const { data: mem } = await supabaseAdmin
       .from("company_members").select("company_id").eq("user_id", userId).maybeSingle();
     const companyId = mem?.company_id;
@@ -71,19 +70,18 @@ export const classifyAccounts = createServerFn({ method: "POST" })
     for (const a of data.accounts) {
       const norm = normalizeDescription(a.accountDescription);
 
-      // 1. Deterministic lookup by normalized description within company
       const { data: hit } = await supabaseAdmin
         .from("gl_mappings")
-        .select("standard_category, confidence_score")
+        .select("standardized_category, confidence")
         .eq("company_id", companyId)
         .eq("normalized_description", norm)
-        .order("confidence_score", { ascending: false })
+        .order("confidence", { ascending: false })
         .limit(1)
         .maybeSingle();
       if (hit) {
         results.push({
           ...a,
-          category: hit.standard_category,
+          category: (hit as { standardized_category: string }).standardized_category,
           confidence: 0.99,
           source: "lookup",
           reasoning: "Exact match from prior approvals",
@@ -92,18 +90,18 @@ export const classifyAccounts = createServerFn({ method: "POST" })
         continue;
       }
 
-      // 2. Vector search (best effort; if embed fails, fall through to AI)
       let vectorHit: { category: string; similarity: number } | null = null;
       try {
         const emb = await embedText(a.accountDescription);
-        const { data: matches } = await supabaseAdmin.rpc("match_gl_mappings" as never, {
+        const rpc = await supabaseAdmin.rpc("match_gl_mappings" as never, {
           query_embedding: toVectorLiteral(emb),
           match_company_id: companyId,
           match_threshold: 0.85,
           match_count: 1,
         } as never);
-        const m = (matches as unknown as Array<{ standard_category: string; similarity: number }> | null)?.[0];
-        if (m && m.similarity >= 0.85) vectorHit = { category: m.standard_category, similarity: m.similarity };
+        const matches = rpc.data as unknown as Array<{ standardized_category: string; similarity: number }> | null;
+        const m = matches?.[0];
+        if (m && m.similarity >= 0.85) vectorHit = { category: m.standardized_category, similarity: m.similarity };
       } catch {
         /* embeddings/RPC missing → skip */
       }
@@ -119,7 +117,6 @@ export const classifyAccounts = createServerFn({ method: "POST" })
         continue;
       }
 
-      // 3. AI fallback
       try {
         const ai = await classifyAccount(a.accountDescription, a.accountNumber);
         results.push({
@@ -163,7 +160,6 @@ export const saveClassifications = createServerFn({ method: "POST" })
     for (const r of data.rows) {
       const norm = normalizeDescription(r.accountDescription);
 
-      // Upsert mapping
       let embeddingLiteral: string | null = null;
       try {
         const emb = await embedText(r.accountDescription);
@@ -177,10 +173,11 @@ export const saveClassifications = createServerFn({ method: "POST" })
           account_number: r.accountNumber,
           account_description: r.accountDescription,
           normalized_description: norm,
-          standard_category: r.category,
-          confidence_score: r.confidence,
+          standardized_category: r.category,
+          confidence: r.confidence,
           needs_review: false,
-          source: r.wasCorrected ? "human" : "ai",
+          approved: true,
+          source: r.wasCorrected ? "human" : "llm",
           embedding: embeddingLiteral,
           approved_by: userId,
           approved_at: new Date().toISOString(),
@@ -215,8 +212,10 @@ export const getMappingsSummary = createServerFn({ method: "GET" })
     const companyId = mem?.company_id;
     if (!companyId) return { total: 0, byCategory: {} as Record<string, number> };
     const { data } = await supabaseAdmin
-      .from("gl_mappings").select("standard_category").eq("company_id", companyId);
+      .from("gl_mappings").select("standardized_category").eq("company_id", companyId);
     const byCategory: Record<string, number> = {};
-    for (const r of data ?? []) byCategory[r.standard_category] = (byCategory[r.standard_category] ?? 0) + 1;
+    for (const r of (data ?? []) as Array<{ standardized_category: string }>) {
+      byCategory[r.standardized_category] = (byCategory[r.standardized_category] ?? 0) + 1;
+    }
     return { total: data?.length ?? 0, byCategory };
   });

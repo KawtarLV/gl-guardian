@@ -71,18 +71,16 @@ export const runForecast = createServerFn({ method: "POST" })
       invoices, payments, customers, projects, milestones, weather,
     });
 
-    // Audit invariant
     for (const w of weeks) {
       if (w.cashIn + w.cashOut > 0 && w.audit.sources.length === 0) {
         throw new Error(`Audit-trail invariant: week ${w.weekNumber} has values without sources`);
       }
     }
 
-    // Persist forecast_runs + forecast_weeks
     const { data: run } = await supabaseAdmin
       .from("forecast_runs").insert({
-        company_id: companyId, run_by: userId, region,
-        starting_balance: 0, week_count: 13,
+        company_id: companyId, created_by: userId, starting_balance: 0,
+        notes: `Region: ${region}`,
       } as never).select("id").single();
     if (run?.id) {
       const rows = weeks.map((w) => ({
@@ -98,11 +96,14 @@ export const runForecast = createServerFn({ method: "POST" })
         anomaly_flags: w.anomalyFlags,
         audit_json: w.audit as never,
       }));
-      await supabaseAdmin.from("forecast_weeks").delete().eq("forecast_run_id", run.id);
       await supabaseAdmin.from("forecast_weeks").insert(rows as never);
     }
 
-    return { runId: run?.id ?? null, weeks, weather };
+    return JSON.parse(JSON.stringify({ runId: run?.id ?? null, weeks, weather })) as {
+      runId: string | null;
+      weeks: Array<Record<string, unknown>>;
+      weather: Array<Record<string, unknown>>;
+    };
   });
 
 export const getLatestForecast = createServerFn({ method: "GET" })
@@ -118,7 +119,10 @@ export const getLatestForecast = createServerFn({ method: "GET" })
     const { data: weeks } = await supabaseAdmin
       .from("forecast_weeks").select("*").eq("forecast_run_id", run.id)
       .order("week_number", { ascending: true });
-    return { run, weeks: weeks ?? [] };
+    return JSON.parse(JSON.stringify({ run, weeks: weeks ?? [] })) as {
+      run: Record<string, unknown>;
+      weeks: Array<Record<string, unknown>>;
+    };
   });
 
 export const getProjectsList = createServerFn({ method: "GET" })
@@ -133,11 +137,12 @@ export const getProjectsList = createServerFn({ method: "GET" })
       supabaseAdmin.from("customers").select("id, name").eq("company_id", companyId),
     ]);
     const customers = new Map((cr.data ?? []).map((c) => [c.id, c.name] as const));
-    return (pr.data ?? []).map((p) => ({
+    const out = (pr.data ?? []).map((p) => ({
       ...p,
       customerName: p.customer_id ? customers.get(p.customer_id) ?? null : null,
       milestones: (mr.data ?? []).filter((m) => m.project_id === p.id),
     }));
+    return JSON.parse(JSON.stringify(out)) as Array<Record<string, unknown>>;
   });
 
 export const copilotAsk = createServerFn({ method: "POST" })
@@ -155,16 +160,17 @@ export const copilotAsk = createServerFn({ method: "POST" })
     if (!run) return { answer: "Run a forecast first so I have data to reason about." };
 
     const { data: weeks } = await supabaseAdmin
-      .from("forecast_weeks").select("week_number, week_start, cash_in, cash_out, net_cash, running_balance, confidence_score, anomaly_flags, audit_json")
+      .from("forecast_weeks")
+      .select("week_number, week_start, cash_in, cash_out, net_cash, running_balance, confidence_score, anomaly_flags, audit_json")
       .eq("forecast_run_id", run.id).order("week_number", { ascending: true });
 
-    const context_str = JSON.stringify(weeks?.slice(0, 13) ?? [], null, 0).slice(0, 12000);
-    const system = `You are a finance copilot for a construction company. You have ONE source of data: the JSON array of 13 forecast weeks provided by the user.
+    const ctx = JSON.stringify(weeks?.slice(0, 13) ?? [], null, 0).slice(0, 12000);
+    const system = `You are a finance copilot for a construction company. You have ONE source of data: the JSON array of 13 forecast weeks provided.
 Rules:
 - Always cite specific week numbers (W1..W13) and source types from audit_json.sources when making any numerical claim.
 - Never invent numbers. If the data does not contain the answer, say so.
 - Keep responses under 250 words, use short bullet points.`;
-    const user = `Forecast data (JSON):\n${context_str}\n\nQuestion: ${data.question}`;
+    const user = `Forecast data (JSON):\n${ctx}\n\nQuestion: ${data.question}`;
     try {
       const answer = await chatCompletion(system, user, { temperature: 0.2 });
       return { answer };
