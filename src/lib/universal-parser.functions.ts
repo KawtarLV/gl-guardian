@@ -298,17 +298,17 @@ account_code | period | date | invoice_number | customer_code | debet | credit |
 
 Reply ONLY as valid JSON: {"field": "...", "confidence": 0.0-1.0, "reasoning": "..."}`;
 
-        const reply = await claudeMessage(prompt, { maxTokens: 200 });
+        const reply = await lovableAi(prompt, { system: "You are a strict JSON-only classifier for Dutch accounting column headers." });
         if (reply) {
           const cleaned = reply.replace(/```json\s*|\s*```/g, "").trim();
           const parsed = JSON.parse(cleaned);
           if ((STANDARD_FIELDS as readonly string[]).includes(parsed.field)) aiField = parsed.field;
           aiConfidence = Math.max(0, Math.min(1, Number(parsed.confidence) || 0.5));
           aiReasoning = String(parsed.reasoning ?? aiReasoning);
-          aiSource = "claude";
+          aiSource = "ai";
         }
       } catch (e) {
-        aiReasoning = `Claude failed: ${e instanceof Error ? e.message : String(e)}`;
+        aiReasoning = `AI failed: ${e instanceof Error ? e.message : String(e)}`;
       }
 
       const { data: saved } = await supabaseAdmin
