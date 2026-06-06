@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { CloudRain, Hammer, Users, Briefcase } from "lucide-react";
 import { getOrCreateCompany } from "@/lib/company.functions";
 import { getOpcoData } from "@/lib/role-views.functions";
+import { SourceBanner } from "@/components/source-banner";
 
 export const Route = createFileRoute("/_authenticated/opco")({
   head: () => ({ meta: [{ title: "Opco MD — Operations" }] }),
@@ -48,6 +49,7 @@ function OpcoPage() {
 
   return (
     <div className="p-6 space-y-6">
+      <SourceBanner />
       <div>
         <h1 className="text-2xl font-bold">Opco MD — Operations</h1>
         <p className="text-sm text-muted-foreground">{company.data?.companyName} · project mix, weather impact & delays</p>
