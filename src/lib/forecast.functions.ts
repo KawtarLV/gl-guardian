@@ -99,11 +99,8 @@ export const runForecast = createServerFn({ method: "POST" })
       await supabaseAdmin.from("forecast_weeks").insert(rows as never);
     }
 
-    return JSON.parse(JSON.stringify({ runId: run?.id ?? null, weeks, weather })) as {
-      runId: string | null;
-      weeks: Array<Record<string, unknown>>;
-      weather: Array<Record<string, unknown>>;
-    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return JSON.parse(JSON.stringify({ runId: run?.id ?? null, weeks, weather })) as any;
   });
 
 export const getLatestForecast = createServerFn({ method: "GET" })
@@ -119,10 +116,8 @@ export const getLatestForecast = createServerFn({ method: "GET" })
     const { data: weeks } = await supabaseAdmin
       .from("forecast_weeks").select("*").eq("forecast_run_id", run.id)
       .order("week_number", { ascending: true });
-    return JSON.parse(JSON.stringify({ run, weeks: weeks ?? [] })) as {
-      run: Record<string, unknown>;
-      weeks: Array<Record<string, unknown>>;
-    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return JSON.parse(JSON.stringify({ run, weeks: weeks ?? [] })) as any;
   });
 
 export const getProjectsList = createServerFn({ method: "GET" })
@@ -142,7 +137,8 @@ export const getProjectsList = createServerFn({ method: "GET" })
       customerName: p.customer_id ? customers.get(p.customer_id) ?? null : null,
       milestones: (mr.data ?? []).filter((m) => m.project_id === p.id),
     }));
-    return JSON.parse(JSON.stringify(out)) as Array<Record<string, unknown>>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return JSON.parse(JSON.stringify(out)) as any;
   });
 
 export const copilotAsk = createServerFn({ method: "POST" })
