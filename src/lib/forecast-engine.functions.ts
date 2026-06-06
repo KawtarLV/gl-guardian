@@ -126,7 +126,11 @@ export const recomputeForecast = createServerFn({ method: "POST" })
     today.setHours(0, 0, 0, 0);
 
     // Shift milestones forward based on weather
-    const shifted = milestones.map((m) => {
+    type ShiftedMilestone = Record<string, unknown> & {
+      projects?: Record<string, unknown> | null;
+      _planned: Date; _shifted: Date; _delay: number;
+    };
+    const shifted: ShiftedMilestone[] = milestones.map((m) => {
       const planned = new Date(m.planned_date as string);
       let totalDelay = 0;
       let current = new Date(planned);
