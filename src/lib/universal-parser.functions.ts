@@ -548,6 +548,12 @@ Reply ONLY as valid JSON: {"field": "...", "confidence": 0.0-1.0, "reasoning": "
         aiReasoning = `AI failed: ${e instanceof Error ? e.message : String(e)}`;
       }
 
+      // Auto-accept the AI's choice — user explicitly asked us not to wait
+      // for column-mapping approval. Anything below 0.6 confidence stays
+      // flagged so the user can still review later, but it does NOT block import.
+      const autoAccept = aiField !== "unknown" && aiConfidence >= 0.6;
+      const status = autoAccept ? "approved" : "needs_review";
+
       const { data: saved } = await supabaseAdmin
         .from("column_mappings")
         .upsert(
@@ -561,7 +567,7 @@ Reply ONLY as valid JSON: {"field": "...", "confidence": 0.0-1.0, "reasoning": "
             confidence: aiConfidence,
             reasoning: aiReasoning,
             source: aiSource,
-            status: "needs_review",
+            status,
           } as never,
           { onConflict: "company_id,normalised_column_name" } as never,
         )
@@ -573,12 +579,13 @@ Reply ONLY as valid JSON: {"field": "...", "confidence": 0.0-1.0, "reasoning": "
         standard_field: aiField,
         confidence: aiConfidence,
         source: aiSource,
-        needs_review: true,
+        needs_review: !autoAccept,
         reasoning: aiReasoning,
         mapping_id: (saved?.id as string | undefined) ?? undefined,
         sample_values: samples,
       });
     }
+
 
     // ── Parse rows using detected fields ──────────────────────────
     const fieldIndex: Partial<Record<StandardField, number>> = {};
