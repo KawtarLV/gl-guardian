@@ -24,17 +24,37 @@ export const runForecast = createServerFn({ method: "POST" })
 
     const companyId = await loadCompanyId(userId);
 
-    const [invR, payR, custR, projR, milR] = await Promise.all([
+    const [invR, payR, custR, projR, milR, msR] = await Promise.all([
       supabaseAdmin.from("invoices").select("*").eq("company_id", companyId),
       supabaseAdmin.from("payments").select("*").eq("company_id", companyId),
       supabaseAdmin.from("customers").select("*").eq("company_id", companyId),
       supabaseAdmin.from("projects").select("*").eq("company_id", companyId),
       supabaseAdmin.from("milestones").select("*").eq("company_id", companyId),
+      supabaseAdmin.from("monthly_summaries").select("period,total_credit").eq("company_id", companyId),
     ]);
 
     const region =
       (projR.data?.[0] as { region?: string | null } | undefined)?.region ?? "amsterdam";
     const weather = await fetchWeather13Weeks(region);
+
+    // Per-month revenue baseline learned from monthly_summaries (uploaded GL).
+    // period is "YYYY-MM"; total_credit ≈ revenue posting per account.
+    const monthRevenue = new Map<string, number>(); // "MM" → avg monthly revenue
+    {
+      const byMonth = new Map<string, { sum: number; n: number }>();
+      for (const r of msR.data ?? []) {
+        const period = String(r.period ?? "");
+        const mm = period.slice(5, 7);
+        if (!/^\d{2}$/.test(mm)) continue;
+        const credit = Number(r.total_credit ?? 0);
+        if (credit <= 0) continue;
+        const bucket = byMonth.get(mm) ?? { sum: 0, n: 0 };
+        bucket.sum += credit;
+        bucket.n += 1;
+        byMonth.set(mm, bucket);
+      }
+      for (const [mm, b] of byMonth) monthRevenue.set(mm, b.sum / b.n);
+    }
 
     const invoices = (invR.data ?? []).map((i) => ({
       id: i.id,
@@ -69,6 +89,7 @@ export const runForecast = createServerFn({ method: "POST" })
     const weeks = engine({
       startingBalance: 0,
       invoices, payments, customers, projects, milestones, weather,
+      monthRevenue,
     });
 
     for (const w of weeks) {
@@ -77,15 +98,25 @@ export const runForecast = createServerFn({ method: "POST" })
       }
     }
 
-    const { data: run } = await supabaseAdmin
+    const { data: run, error: runErr } = await supabaseAdmin
       .from("forecast_runs").insert({
         company_id: companyId, created_by: userId, starting_balance: 0,
         notes: `Region: ${region}`,
       } as never).select("id").single();
+    if (runErr) throw new Error(`forecast_runs insert failed: ${runErr.message}`);
     if (run?.id) {
+      // Clear any prior 'legacy' scenario rows for this company so the unique
+      // constraint (company_id, scenario, week_number) doesn't block us.
+      await supabaseAdmin
+        .from("forecast_weeks")
+        .delete()
+        .eq("company_id", companyId)
+        .eq("scenario", "legacy");
+
       const rows = weeks.map((w) => ({
         company_id: companyId,
         forecast_run_id: run.id,
+        scenario: "legacy",
         week_number: w.weekNumber,
         week_start: w.weekStart,
         cash_in: w.cashIn,
@@ -96,7 +127,9 @@ export const runForecast = createServerFn({ method: "POST" })
         anomaly_flags: w.anomalyFlags,
         audit_json: w.audit as never,
       }));
-      await supabaseAdmin.from("forecast_weeks").insert(rows as never);
+      const { error: wkErr } = await supabaseAdmin
+        .from("forecast_weeks").insert(rows as never);
+      if (wkErr) throw new Error(`forecast_weeks insert failed: ${wkErr.message}`);
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -114,7 +147,9 @@ export const getLatestForecast = createServerFn({ method: "GET" })
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (!run) return null;
     const { data: weeks } = await supabaseAdmin
-      .from("forecast_weeks").select("*").eq("forecast_run_id", run.id)
+      .from("forecast_weeks").select("*")
+      .eq("forecast_run_id", run.id)
+      .eq("scenario", "legacy")
       .order("week_number", { ascending: true });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return JSON.parse(JSON.stringify({ run, weeks: weeks ?? [] })) as any;
