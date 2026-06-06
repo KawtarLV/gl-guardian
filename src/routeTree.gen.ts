@@ -14,6 +14,9 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedUploadRouteImport } from './routes/_authenticated/upload'
 import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
+import { Route as AuthenticatedProjectLeadRouteImport } from './routes/_authenticated/project-lead'
+import { Route as AuthenticatedPeBoardRouteImport } from './routes/_authenticated/pe-board'
+import { Route as AuthenticatedOpcoRouteImport } from './routes/_authenticated/opco'
 import { Route as AuthenticatedForecastRouteImport } from './routes/_authenticated/forecast'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedCfoRouteImport } from './routes/_authenticated/cfo'
@@ -42,6 +45,22 @@ const AuthenticatedProjectsRoute = AuthenticatedProjectsRouteImport.update({
   path: '/projects',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedProjectLeadRoute =
+  AuthenticatedProjectLeadRouteImport.update({
+    id: '/project-lead',
+    path: '/project-lead',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedPeBoardRoute = AuthenticatedPeBoardRouteImport.update({
+  id: '/pe-board',
+  path: '/pe-board',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedOpcoRoute = AuthenticatedOpcoRouteImport.update({
+  id: '/opco',
+  path: '/opco',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedForecastRoute = AuthenticatedForecastRouteImport.update({
   id: '/forecast',
   path: '/forecast',
@@ -64,6 +83,9 @@ export interface FileRoutesByFullPath {
   '/cfo': typeof AuthenticatedCfoRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/forecast': typeof AuthenticatedForecastRoute
+  '/opco': typeof AuthenticatedOpcoRoute
+  '/pe-board': typeof AuthenticatedPeBoardRoute
+  '/project-lead': typeof AuthenticatedProjectLeadRoute
   '/projects': typeof AuthenticatedProjectsRoute
   '/upload': typeof AuthenticatedUploadRoute
 }
@@ -73,6 +95,9 @@ export interface FileRoutesByTo {
   '/cfo': typeof AuthenticatedCfoRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/forecast': typeof AuthenticatedForecastRoute
+  '/opco': typeof AuthenticatedOpcoRoute
+  '/pe-board': typeof AuthenticatedPeBoardRoute
+  '/project-lead': typeof AuthenticatedProjectLeadRoute
   '/projects': typeof AuthenticatedProjectsRoute
   '/upload': typeof AuthenticatedUploadRoute
 }
@@ -84,6 +109,9 @@ export interface FileRoutesById {
   '/_authenticated/cfo': typeof AuthenticatedCfoRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/forecast': typeof AuthenticatedForecastRoute
+  '/_authenticated/opco': typeof AuthenticatedOpcoRoute
+  '/_authenticated/pe-board': typeof AuthenticatedPeBoardRoute
+  '/_authenticated/project-lead': typeof AuthenticatedProjectLeadRoute
   '/_authenticated/projects': typeof AuthenticatedProjectsRoute
   '/_authenticated/upload': typeof AuthenticatedUploadRoute
 }
@@ -95,6 +123,9 @@ export interface FileRouteTypes {
     | '/cfo'
     | '/dashboard'
     | '/forecast'
+    | '/opco'
+    | '/pe-board'
+    | '/project-lead'
     | '/projects'
     | '/upload'
   fileRoutesByTo: FileRoutesByTo
@@ -104,6 +135,9 @@ export interface FileRouteTypes {
     | '/cfo'
     | '/dashboard'
     | '/forecast'
+    | '/opco'
+    | '/pe-board'
+    | '/project-lead'
     | '/projects'
     | '/upload'
   id:
@@ -114,6 +148,9 @@ export interface FileRouteTypes {
     | '/_authenticated/cfo'
     | '/_authenticated/dashboard'
     | '/_authenticated/forecast'
+    | '/_authenticated/opco'
+    | '/_authenticated/pe-board'
+    | '/_authenticated/project-lead'
     | '/_authenticated/projects'
     | '/_authenticated/upload'
   fileRoutesById: FileRoutesById
@@ -161,6 +198,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProjectsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/project-lead': {
+      id: '/_authenticated/project-lead'
+      path: '/project-lead'
+      fullPath: '/project-lead'
+      preLoaderRoute: typeof AuthenticatedProjectLeadRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/pe-board': {
+      id: '/_authenticated/pe-board'
+      path: '/pe-board'
+      fullPath: '/pe-board'
+      preLoaderRoute: typeof AuthenticatedPeBoardRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/opco': {
+      id: '/_authenticated/opco'
+      path: '/opco'
+      fullPath: '/opco'
+      preLoaderRoute: typeof AuthenticatedOpcoRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/forecast': {
       id: '/_authenticated/forecast'
       path: '/forecast'
@@ -189,6 +247,9 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedCfoRoute: typeof AuthenticatedCfoRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedForecastRoute: typeof AuthenticatedForecastRoute
+  AuthenticatedOpcoRoute: typeof AuthenticatedOpcoRoute
+  AuthenticatedPeBoardRoute: typeof AuthenticatedPeBoardRoute
+  AuthenticatedProjectLeadRoute: typeof AuthenticatedProjectLeadRoute
   AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRoute
   AuthenticatedUploadRoute: typeof AuthenticatedUploadRoute
 }
@@ -197,6 +258,9 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedCfoRoute: AuthenticatedCfoRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedForecastRoute: AuthenticatedForecastRoute,
+  AuthenticatedOpcoRoute: AuthenticatedOpcoRoute,
+  AuthenticatedPeBoardRoute: AuthenticatedPeBoardRoute,
+  AuthenticatedProjectLeadRoute: AuthenticatedProjectLeadRoute,
   AuthenticatedProjectsRoute: AuthenticatedProjectsRoute,
   AuthenticatedUploadRoute: AuthenticatedUploadRoute,
 }
