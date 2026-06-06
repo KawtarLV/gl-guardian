@@ -77,15 +77,25 @@ export const runForecast = createServerFn({ method: "POST" })
       }
     }
 
-    const { data: run } = await supabaseAdmin
+    const { data: run, error: runErr } = await supabaseAdmin
       .from("forecast_runs").insert({
         company_id: companyId, created_by: userId, starting_balance: 0,
         notes: `Region: ${region}`,
       } as never).select("id").single();
+    if (runErr) throw new Error(`forecast_runs insert failed: ${runErr.message}`);
     if (run?.id) {
+      // Clear any prior 'legacy' scenario rows for this company so the unique
+      // constraint (company_id, scenario, week_number) doesn't block us.
+      await supabaseAdmin
+        .from("forecast_weeks")
+        .delete()
+        .eq("company_id", companyId)
+        .eq("scenario", "legacy");
+
       const rows = weeks.map((w) => ({
         company_id: companyId,
         forecast_run_id: run.id,
+        scenario: "legacy",
         week_number: w.weekNumber,
         week_start: w.weekStart,
         cash_in: w.cashIn,
@@ -96,7 +106,9 @@ export const runForecast = createServerFn({ method: "POST" })
         anomaly_flags: w.anomalyFlags,
         audit_json: w.audit as never,
       }));
-      await supabaseAdmin.from("forecast_weeks").insert(rows as never);
+      const { error: wkErr } = await supabaseAdmin
+        .from("forecast_weeks").insert(rows as never);
+      if (wkErr) throw new Error(`forecast_weeks insert failed: ${wkErr.message}`);
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
