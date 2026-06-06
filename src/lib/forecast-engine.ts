@@ -259,26 +259,40 @@ export function runForecast(input: ForecastInput): ForecastWeek[] {
     }
   }
 
-  // ---- Revenue source C: seasonal fallback for weeks beyond observed signal
-  // Compute trailing 13-week average from history (if available)
+  // ---- Revenue source C: seasonal fallback for weeks beyond observed signal.
+  // Prefer per-month revenue learned from uploaded GL monthly_summaries; if
+  // unavailable, fall back to a trailing weekly average from invoice history
+  // scaled by the static SEASONAL_INDEX.
   const historyTotals = input.invoices
     .filter(i => i.invoiceDate < weekStarts[0])
     .map(i => i.amount);
-  const weeklyAvg = historyTotals.length > 0
+  const weeklyAvgHistory = historyTotals.length > 0
     ? historyTotals.reduce((a, b) => a + b, 0) / Math.max(1, Math.ceil(historyTotals.length / 4))
     : 0;
   for (let i = 0; i < 13; i++) {
     if (weeks[i].cashIn > 0) continue; // only fill if no observed signal
-    const month = new Date(weekStarts[i] + "T00:00:00Z").getUTCMonth() + 1;
-    const idx = SEASONAL_INDEX[month] ?? 1;
-    const seasonal = weeklyAvg * idx;
+    const d = new Date(weekStarts[i] + "T00:00:00Z");
+    const monthNum = d.getUTCMonth() + 1;
+    const mm = String(monthNum).padStart(2, "0");
+    const learnedMonthly = input.monthRevenue?.get(mm) ?? 0;
+    let seasonal = 0;
+    let basis = "";
+    if (learnedMonthly > 0) {
+      // 30.44 avg days/month → ÷ 4.348 to weekly
+      seasonal = learnedMonthly / 4.348;
+      basis = `learned monthly avg €${learnedMonthly.toFixed(0)} (month ${mm}) → €${seasonal.toFixed(0)}/wk`;
+    } else if (weeklyAvgHistory > 0) {
+      const idx = SEASONAL_INDEX[monthNum] ?? 1;
+      seasonal = weeklyAvgHistory * idx;
+      basis = `invoice history avg €${weeklyAvgHistory.toFixed(0)}/wk × seasonal index ${idx}`;
+    }
     if (seasonal > 0) {
       weeks[i].cashIn += seasonal;
       weeks[i].audit.sources.push({
         type: "seasonal_revenue",
-        description: `Seasonal fallback (avg €${weeklyAvg.toFixed(0)}/wk × index ${idx} for month ${month})`,
+        description: `Seasonal fallback — ${basis}`,
         amount: seasonal,
-        meta: { month, seasonalIndex: idx, baseAvg: weeklyAvg },
+        meta: { month: monthNum, learnedMonthly, weeklyAvgHistory },
       });
     }
   }
