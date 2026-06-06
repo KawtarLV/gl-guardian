@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, Circle, Clock, AlertTriangle } from "lucide-react";
 import { getOrCreateCompany } from "@/lib/company.functions";
 import { getProjectLeadData } from "@/lib/role-views.functions";
+import { SourceBanner } from "@/components/source-banner";
 
 export const Route = createFileRoute("/_authenticated/project-lead")({
   head: () => ({ meta: [{ title: "Project Lead — Milestones" }] }),
@@ -38,6 +39,7 @@ function ProjectLeadPage() {
 
   return (
     <div className="p-6 space-y-6">
+      <SourceBanner />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Project Lead</h1>

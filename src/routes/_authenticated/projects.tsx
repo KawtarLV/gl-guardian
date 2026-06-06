@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getProjectsList } from "@/lib/forecast.functions";
+import { SourceBanner } from "@/components/source-banner";
 
 export const Route = createFileRoute("/_authenticated/projects")({
   head: () => ({ meta: [{ title: "Projects — Cashflow" }] }),
@@ -28,7 +29,8 @@ function ProjectsPage() {
   const projects: Project[] = (q.data ?? []) as Project[];
 
   return (
-    <div className="p-8 max-w-6xl">
+    <div className="p-8 max-w-6xl space-y-4">
+      <SourceBanner />
       <h1 className="text-2xl font-semibold mb-1">Projects & Milestones</h1>
       <p className="text-muted-foreground mb-6">Planned milestones — the forecast engine shifts these by weather-lost days.</p>
       {projects.length === 0 ? (

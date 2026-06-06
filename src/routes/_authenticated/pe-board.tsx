@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Shield, TrendingUp, TrendingDown, Building2 } from "lucide-react";
 import { getOrCreateCompany } from "@/lib/company.functions";
 import { getPeBoardData } from "@/lib/role-views.functions";
+import { SourceBanner } from "@/components/source-banner";
 
 export const Route = createFileRoute("/_authenticated/pe-board")({
   head: () => ({ meta: [{ title: "PE Board — Portfolio overview" }] }),
@@ -51,6 +52,7 @@ function PeBoard() {
 
   return (
     <div className="p-6 space-y-6">
+      <SourceBanner />
       <div>
         <h1 className="text-2xl font-bold">PE Board</h1>
         <p className="text-sm text-muted-foreground">Portfolio overview across {companies.length} opco{companies.length === 1 ? "" : "s"}</p>
