@@ -14,16 +14,876 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      classification_feedback: {
+        Row: {
+          account_description: string
+          company_id: string
+          corrected_category: string
+          created_at: string
+          created_by: string | null
+          embedding: string | null
+          id: string
+          normalized_description: string
+          suggested_category: string | null
+          user_feedback: string | null
+        }
+        Insert: {
+          account_description: string
+          company_id: string
+          corrected_category: string
+          created_at?: string
+          created_by?: string | null
+          embedding?: string | null
+          id?: string
+          normalized_description: string
+          suggested_category?: string | null
+          user_feedback?: string | null
+        }
+        Update: {
+          account_description?: string
+          company_id?: string
+          corrected_category?: string
+          created_at?: string
+          created_by?: string | null
+          embedding?: string | null
+          id?: string
+          normalized_description?: string
+          suggested_category?: string | null
+          user_feedback?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "classification_feedback_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      companies: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      company_members: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_members_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      customers: {
+        Row: {
+          avg_payment_lag_days: number | null
+          company_id: string
+          created_at: string
+          customer_type: string
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          avg_payment_lag_days?: number | null
+          company_id: string
+          created_at?: string
+          customer_type?: string
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          avg_payment_lag_days?: number | null
+          company_id?: string
+          created_at?: string
+          customer_type?: string
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customers_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      forecast_runs: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          notes: string | null
+          run_date: string
+          starting_balance: number
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          run_date?: string
+          starting_balance?: number
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          run_date?: string
+          starting_balance?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "forecast_runs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      forecast_weeks: {
+        Row: {
+          anomaly_flags: Json
+          audit_json: Json
+          cash_in: number
+          cash_out: number
+          company_id: string
+          confidence_score: number
+          created_at: string
+          forecast_run_id: string
+          id: string
+          net_cash: number
+          running_balance: number
+          week_number: number
+          week_start: string
+        }
+        Insert: {
+          anomaly_flags?: Json
+          audit_json?: Json
+          cash_in?: number
+          cash_out?: number
+          company_id: string
+          confidence_score?: number
+          created_at?: string
+          forecast_run_id: string
+          id?: string
+          net_cash?: number
+          running_balance?: number
+          week_number: number
+          week_start: string
+        }
+        Update: {
+          anomaly_flags?: Json
+          audit_json?: Json
+          cash_in?: number
+          cash_out?: number
+          company_id?: string
+          confidence_score?: number
+          created_at?: string
+          forecast_run_id?: string
+          id?: string
+          net_cash?: number
+          running_balance?: number
+          week_number?: number
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "forecast_weeks_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "forecast_weeks_forecast_run_id_fkey"
+            columns: ["forecast_run_id"]
+            isOneToOne: false
+            referencedRelation: "forecast_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gl_mappings: {
+        Row: {
+          account_description: string
+          account_number: string | null
+          approved: boolean
+          approved_at: string | null
+          approved_by: string | null
+          company_id: string
+          confidence: number
+          created_at: string
+          embedding: string | null
+          id: string
+          needs_review: boolean
+          normalized_description: string
+          reasoning: string | null
+          source: string
+          standardized_category: string
+          updated_at: string
+        }
+        Insert: {
+          account_description: string
+          account_number?: string | null
+          approved?: boolean
+          approved_at?: string | null
+          approved_by?: string | null
+          company_id: string
+          confidence?: number
+          created_at?: string
+          embedding?: string | null
+          id?: string
+          needs_review?: boolean
+          normalized_description: string
+          reasoning?: string | null
+          source?: string
+          standardized_category: string
+          updated_at?: string
+        }
+        Update: {
+          account_description?: string
+          account_number?: string | null
+          approved?: boolean
+          approved_at?: string | null
+          approved_by?: string | null
+          company_id?: string
+          confidence?: number
+          created_at?: string
+          embedding?: string | null
+          id?: string
+          needs_review?: boolean
+          normalized_description?: string
+          reasoning?: string | null
+          source?: string
+          standardized_category?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gl_mappings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invoices: {
+        Row: {
+          amount: number
+          company_id: string
+          created_at: string
+          customer_id: string | null
+          due_date: string | null
+          external_ref: string | null
+          gl_category: string | null
+          id: string
+          invoice_date: string
+          is_recurring: boolean
+          milestone_id: string | null
+          project_id: string | null
+          recurrence_type: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          company_id: string
+          created_at?: string
+          customer_id?: string | null
+          due_date?: string | null
+          external_ref?: string | null
+          gl_category?: string | null
+          id?: string
+          invoice_date: string
+          is_recurring?: boolean
+          milestone_id?: string | null
+          project_id?: string | null
+          recurrence_type?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          company_id?: string
+          created_at?: string
+          customer_id?: string | null
+          due_date?: string | null
+          external_ref?: string | null
+          gl_category?: string | null
+          id?: string
+          invoice_date?: string
+          is_recurring?: boolean
+          milestone_id?: string | null
+          project_id?: string | null
+          recurrence_type?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoices_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_milestone_id_fkey"
+            columns: ["milestone_id"]
+            isOneToOne: false
+            referencedRelation: "milestones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      labour: {
+        Row: {
+          company_id: string
+          cost: number
+          created_at: string
+          hours: number | null
+          id: string
+          project_id: string
+          week_date: string
+        }
+        Insert: {
+          company_id: string
+          cost?: number
+          created_at?: string
+          hours?: number | null
+          id?: string
+          project_id: string
+          week_date: string
+        }
+        Update: {
+          company_id?: string
+          cost?: number
+          created_at?: string
+          hours?: number | null
+          id?: string
+          project_id?: string
+          week_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "labour_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "labour_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mapping_history: {
+        Row: {
+          changed_by: string | null
+          company_id: string
+          created_at: string
+          gl_mapping_id: string
+          id: string
+          new_category: string
+          old_category: string | null
+        }
+        Insert: {
+          changed_by?: string | null
+          company_id: string
+          created_at?: string
+          gl_mapping_id: string
+          id?: string
+          new_category: string
+          old_category?: string | null
+        }
+        Update: {
+          changed_by?: string | null
+          company_id?: string
+          created_at?: string
+          gl_mapping_id?: string
+          id?: string
+          new_category?: string
+          old_category?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mapping_history_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mapping_history_gl_mapping_id_fkey"
+            columns: ["gl_mapping_id"]
+            isOneToOne: false
+            referencedRelation: "gl_mappings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      materials: {
+        Row: {
+          company_id: string
+          cost: number
+          created_at: string
+          description: string | null
+          id: string
+          milestone_id: string | null
+          order_date: string | null
+          project_id: string
+        }
+        Insert: {
+          company_id: string
+          cost?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          milestone_id?: string | null
+          order_date?: string | null
+          project_id: string
+        }
+        Update: {
+          company_id?: string
+          cost?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          milestone_id?: string | null
+          order_date?: string | null
+          project_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "materials_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "materials_milestone_id_fkey"
+            columns: ["milestone_id"]
+            isOneToOne: false
+            referencedRelation: "milestones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "materials_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      milestones: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          invoice_amount: number
+          name: string
+          planned_date: string
+          project_id: string
+          shifted_date: string | null
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          invoice_amount?: number
+          name: string
+          planned_date: string
+          project_id: string
+          shifted_date?: string | null
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          invoice_amount?: number
+          name?: string
+          planned_date?: string
+          project_id?: string
+          shifted_date?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "milestones_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "milestones_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payments: {
+        Row: {
+          amount: number
+          company_id: string
+          created_at: string
+          id: string
+          invoice_id: string
+          payment_date: string
+        }
+        Insert: {
+          amount: number
+          company_id: string
+          created_at?: string
+          id?: string
+          invoice_id: string
+          payment_date: string
+        }
+        Update: {
+          amount?: number
+          company_id?: string
+          created_at?: string
+          id?: string
+          invoice_id?: string
+          payment_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          email: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      projects: {
+        Row: {
+          company_id: string
+          contractor: string | null
+          created_at: string
+          customer_id: string | null
+          end_date: string | null
+          id: string
+          name: string
+          region: string | null
+          start_date: string | null
+          status: string
+          total_labour_cost: number
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          contractor?: string | null
+          created_at?: string
+          customer_id?: string | null
+          end_date?: string | null
+          id?: string
+          name: string
+          region?: string | null
+          start_date?: string | null
+          status?: string
+          total_labour_cost?: number
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          contractor?: string | null
+          created_at?: string
+          customer_id?: string | null
+          end_date?: string | null
+          id?: string
+          name?: string
+          region?: string | null
+          start_date?: string | null
+          status?: string
+          total_labour_cost?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "projects_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "projects_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      subcontractors: {
+        Row: {
+          company_id: string
+          completion_date: string | null
+          cost: number
+          created_at: string
+          id: string
+          milestone_id: string | null
+          name: string | null
+          payment_lag_days: number
+          project_id: string
+        }
+        Insert: {
+          company_id: string
+          completion_date?: string | null
+          cost?: number
+          created_at?: string
+          id?: string
+          milestone_id?: string | null
+          name?: string | null
+          payment_lag_days?: number
+          project_id: string
+        }
+        Update: {
+          company_id?: string
+          completion_date?: string | null
+          cost?: number
+          created_at?: string
+          id?: string
+          milestone_id?: string | null
+          name?: string | null
+          payment_lag_days?: number
+          project_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subcontractors_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subcontractors_milestone_id_fkey"
+            columns: ["milestone_id"]
+            isOneToOne: false
+            referencedRelation: "milestones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subcontractors_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_roles_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      weather_cache: {
+        Row: {
+          company_id: string
+          confidence: number
+          consensus_mm: number | null
+          fetched_at: string
+          frost_flag: boolean
+          id: string
+          lost_days: number
+          min_temp_c: number | null
+          open_meteo_mm: number | null
+          openweather_mm: number | null
+          region: string
+          week_start: string
+        }
+        Insert: {
+          company_id: string
+          confidence?: number
+          consensus_mm?: number | null
+          fetched_at?: string
+          frost_flag?: boolean
+          id?: string
+          lost_days?: number
+          min_temp_c?: number | null
+          open_meteo_mm?: number | null
+          openweather_mm?: number | null
+          region: string
+          week_start: string
+        }
+        Update: {
+          company_id?: string
+          confidence?: number
+          consensus_mm?: number | null
+          fetched_at?: string
+          frost_flag?: boolean
+          id?: string
+          lost_days?: number
+          min_temp_c?: number | null
+          open_meteo_mm?: number | null
+          openweather_mm?: number | null
+          region?: string
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "weather_cache_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _company_id: string
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      is_company_member: {
+        Args: { _company_id: string; _user_id: string }
+        Returns: boolean
+      }
+      user_company_id: { Args: { _user_id: string }; Returns: string }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "member"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +1010,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "member"],
+    },
   },
 } as const
