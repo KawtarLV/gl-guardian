@@ -38,12 +38,16 @@ function UploadPage() {
   return (
     <div className="p-8 max-w-7xl">
       <h1 className="text-2xl font-semibold mb-1">Upload & Map</h1>
-      <p className="text-muted-foreground mb-6">Drop an Excel export — either GL accounts to map, or invoice data to seed the forecast.</p>
-      <Tabs defaultValue="gl">
+      <p className="text-muted-foreground mb-6">Drop any Excel/CSV export — the universal parser detects columns, asks for review on anything new, and seeds the forecast.</p>
+      <Tabs defaultValue="smart">
         <TabsList>
+          <TabsTrigger value="smart">Smart Import</TabsTrigger>
+          <TabsTrigger value="columns">Column Mappings</TabsTrigger>
           <TabsTrigger value="gl">GL Mapping</TabsTrigger>
           <TabsTrigger value="demo">Demo Data</TabsTrigger>
         </TabsList>
+        <TabsContent value="smart" className="mt-6"><SmartImportTab /></TabsContent>
+        <TabsContent value="columns" className="mt-6"><ColumnMappingsTab /></TabsContent>
         <TabsContent value="gl" className="mt-6"><GlMappingTab /></TabsContent>
         <TabsContent value="demo" className="mt-6"><DemoDataTab /></TabsContent>
       </Tabs>
