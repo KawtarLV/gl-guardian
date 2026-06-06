@@ -68,6 +68,8 @@ export interface ForecastInput {
   projects: Project[];
   milestones: Milestone[];
   weather: WeeklyWeather[]; // length 13
+  // Optional learned baselines (per "MM" → avg monthly revenue from GL summaries)
+  monthRevenue?: Map<string, number>;
   // AI overlays (advisory)
   aiPaymentLag?: Map<string, { lagDays: number; confidence: number }>; // by customerId
   aiProjectRisk?: Map<string, { riskScore: number }>; // by projectId
