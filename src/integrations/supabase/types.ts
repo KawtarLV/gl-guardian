@@ -880,6 +880,20 @@ export type Database = {
         Args: { _company_id: string; _user_id: string }
         Returns: boolean
       }
+      match_gl_mappings: {
+        Args: {
+          match_company_id: string
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          account_description: string
+          id: string
+          similarity: number
+          standardized_category: string
+        }[]
+      }
       user_company_id: { Args: { _user_id: string }; Returns: string }
     }
     Enums: {
