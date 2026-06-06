@@ -21,6 +21,27 @@ export function parseWorkbook(buffer: ArrayBuffer): ParsedSheet[] {
   });
 }
 
+/** Return every sheet as a raw matrix (string[][]) — no header inference.
+ *  Use this when files have metadata rows above the real header row. */
+export interface RawSheet {
+  sheetName: string;
+  rows: string[][];
+}
+export function parseWorkbookRaw(buffer: ArrayBuffer): RawSheet[] {
+  const wb = XLSX.read(buffer, { type: "array" });
+  return wb.SheetNames.map((name) => {
+    const ws = wb.Sheets[name];
+    const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+      header: 1,
+      defval: "",
+      raw: false,
+      blankrows: false,
+    });
+    const rows: string[][] = aoa.map((r) => (r || []).map((c) => (c == null ? "" : String(c))));
+    return { sheetName: name, rows };
+  });
+}
+
 // Heuristically pick the first column that looks like X
 const ACCOUNT_NUMBER_HEADERS = ["account_number", "account number", "rekening", "rekeningnr", "grootboek", "grootboeknummer", "nr", "nummer", "code"];
 const ACCOUNT_DESC_HEADERS = ["account_description", "account description", "description", "omschrijving", "naam", "rekeningnaam", "grootboek omschrijving"];
