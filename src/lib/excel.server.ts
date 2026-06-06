@@ -228,16 +228,18 @@ const CREDIT_HEADERS = ["credit", "kredit", "haben"];
 const JOURNAL_DATE_HEADERS = ["datum", "date"];
 const TREK_HEADERS = ["trek", "relatie", "relation", "klantnr", "debiteur"];
 const BOEKINGSTEKST_HEADERS = ["boekingstekst", "omschrijving", "description", "memo"];
-const BOEKNR_HEADERS = ["boeknummer", "boeknr", "journal", "journaal"];
+const BOEKNR_HEADERS = ["boeknummer", "boeknr", "journal", "journaal", "bkst", "bkst.nr", "bkstnr", "boekstuk", "boekstuknr", "boekstuknummer"];
 const DAGBOEK_HEADERS = ["dagboek", "daybook"];
 const REKENING_HEADERS = ["rekening", "grootboek", "grootboeknummer"];
 
 export function detectJournalShape(sheet: ParsedSheet): boolean {
-  const hasRekening = !!findHeader(sheet.headers, REKENING_HEADERS);
+  const hasRekening = !!findHeader(sheet.headers, REKENING_HEADERS) || !!sheet.kaartAccount;
   const hasDebOrCred =
     !!findHeader(sheet.headers, DEBET_HEADERS) || !!findHeader(sheet.headers, CREDIT_HEADERS);
   const hasBoeknr = !!findHeader(sheet.headers, BOEKNR_HEADERS);
-  return hasRekening && hasDebOrCred && hasBoeknr;
+  const hasDagboek = !!findHeader(sheet.headers, DAGBOEK_HEADERS);
+  const hasDate = !!findHeader(sheet.headers, JOURNAL_DATE_HEADERS);
+  return hasRekening && hasDebOrCred && hasDate && (hasBoeknr || hasDagboek);
 }
 
 export function extractJournalRows(sheet: ParsedSheet): JournalExtraction[] {
@@ -249,10 +251,15 @@ export function extractJournalRows(sheet: ParsedSheet): JournalExtraction[] {
   const textCol = findHeader(sheet.headers, BOEKINGSTEKST_HEADERS);
   const boekCol = findHeader(sheet.headers, BOEKNR_HEADERS);
   const dagCol = findHeader(sheet.headers, DAGBOEK_HEADERS);
-  if (!rekCol || !dateCol) return [];
+  if (!dateCol) return [];
+  // Kaart fallback: single-account exports have no per-row rekening column.
+  const kaartRek = sheet.kaartAccount?.number ?? null;
+  const kaartDesc = sheet.kaartAccount?.description ?? null;
+  if (!rekCol && !kaartRek) return [];
   const out: JournalExtraction[] = [];
   for (const row of sheet.rows) {
-    const rek = row[rekCol];
+    const rekRaw = rekCol ? row[rekCol] : null;
+    const rek = rekRaw != null && String(rekRaw).trim() !== "" ? String(rekRaw).trim() : kaartRek;
     const date = toDateString(row[dateCol]);
     if (!rek || !date) continue;
     const deb = debCol ? Number(row[debCol]) || 0 : 0;
@@ -265,13 +272,13 @@ export function extractJournalRows(sheet: ParsedSheet): JournalExtraction[] {
     const boek = boekCol && row[boekCol] ? String(row[boekCol]).trim() : "";
     const dag = dagCol && row[dagCol] ? String(row[dagCol]).trim() : "";
     const tail = dag && boek ? `${dag} ${boek}` : dag || boek;
-    const description = [text, tail].filter(Boolean).join(" · ");
+    const description = [text, tail, !text && !tail && kaartDesc ? kaartDesc : ""].filter(Boolean).join(" · ");
     out.push({
-      rekening: String(rek).trim(),
+      rekening: rek,
       trek,
       datum: date,
       amount,
-      description: description || "Boeking",
+      description: description || kaartDesc || "Boeking",
     });
   }
   return out;
@@ -288,4 +295,5 @@ export function detectShape(sheet: ParsedSheet): "gl" | "invoices" | "journal" |
   if (hasAccountDesc) return "gl";
   return "unknown";
 }
+
 
