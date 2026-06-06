@@ -76,26 +76,11 @@ export interface InvoiceExtraction {
 }
 
 function toDateString(v: unknown): string | null {
-  if (v == null || v === "") return null;
-  if (typeof v === "number") {
-    // Excel serial date
-    const d = XLSX.SSF.parse_date_code(v);
-    if (!d) return null;
-    return `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`;
-  }
-  const s = String(v).trim();
-  // try ISO or dd-mm-yyyy / dd/mm/yyyy
-  const iso = /^\d{4}-\d{2}-\d{2}/.exec(s);
-  if (iso) return s.slice(0, 10);
-  const dmY = /^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})$/.exec(s);
-  if (dmY) {
-    const [, d, m, y] = dmY;
-    const yr = y.length === 2 ? `20${y}` : y;
-    return `${yr}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
-  }
-  const parsed = new Date(s);
-  if (!isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
-  return null;
+  // Delegate to shared parser to avoid bundler quirks with XLSX.SSF.
+  // Lazy require to keep this file self-contained.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { parseDate } = require("./date-parser") as typeof import("./date-parser");
+  return parseDate(v as string | number | null | undefined);
 }
 
 export function extractInvoiceRows(sheet: ParsedSheet): InvoiceExtraction[] {
