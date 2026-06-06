@@ -60,7 +60,7 @@ function CfoPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const weeks = (forecast.data?.weeks ?? []) as Array<Record<string, number | string | boolean | null | unknown>>;
+  const weeks = (forecast.data?.weeks ?? []) as Array<Record<string, any>>;
   const covenant = (forecast.data?.covenants ?? [])[0] as { threshold?: number; metric?: string } | undefined;
 
   const totals = weeks.reduce(
