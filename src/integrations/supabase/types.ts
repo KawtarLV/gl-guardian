@@ -61,6 +61,71 @@ export type Database = {
           },
         ]
       }
+      column_mappings: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          company_id: string | null
+          confidence: number | null
+          created_at: string
+          id: string
+          normalised_column_name: string | null
+          reasoning: string | null
+          sample_values: Json | null
+          source: string | null
+          source_column_name: string
+          source_system: string | null
+          standard_field: string | null
+          status: string | null
+          suggested_field: string | null
+          updated_at: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          company_id?: string | null
+          confidence?: number | null
+          created_at?: string
+          id?: string
+          normalised_column_name?: string | null
+          reasoning?: string | null
+          sample_values?: Json | null
+          source?: string | null
+          source_column_name: string
+          source_system?: string | null
+          standard_field?: string | null
+          status?: string | null
+          suggested_field?: string | null
+          updated_at?: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          company_id?: string | null
+          confidence?: number | null
+          created_at?: string
+          id?: string
+          normalised_column_name?: string | null
+          reasoning?: string | null
+          sample_values?: Json | null
+          source?: string | null
+          source_column_name?: string
+          source_system?: string | null
+          standard_field?: string | null
+          status?: string | null
+          suggested_field?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "column_mappings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       companies: {
         Row: {
           created_at: string
@@ -142,6 +207,65 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "customers_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      file_uploads: {
+        Row: {
+          column_map: Json | null
+          company_id: string | null
+          failed_rows: number | null
+          file_structure: string | null
+          filename: string | null
+          id: string
+          parse_quality_score: number | null
+          parsed_rows: number | null
+          status: string | null
+          total_rows: number | null
+          updated_at: string
+          uploaded_at: string
+          uploaded_by: string | null
+          warnings: Json | null
+        }
+        Insert: {
+          column_map?: Json | null
+          company_id?: string | null
+          failed_rows?: number | null
+          file_structure?: string | null
+          filename?: string | null
+          id?: string
+          parse_quality_score?: number | null
+          parsed_rows?: number | null
+          status?: string | null
+          total_rows?: number | null
+          updated_at?: string
+          uploaded_at?: string
+          uploaded_by?: string | null
+          warnings?: Json | null
+        }
+        Update: {
+          column_map?: Json | null
+          company_id?: string | null
+          failed_rows?: number | null
+          file_structure?: string | null
+          filename?: string | null
+          id?: string
+          parse_quality_score?: number | null
+          parsed_rows?: number | null
+          status?: string | null
+          total_rows?: number | null
+          updated_at?: string
+          uploaded_at?: string
+          uploaded_by?: string | null
+          warnings?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "file_uploads_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
