@@ -19,13 +19,20 @@ export function parseDate(raw: string | number | null | undefined): string | nul
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
   if (/^\d{4}-\d{2}-\d{2}T/.test(str)) return str.slice(0, 10);
 
-  // DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY (separators are interchangeable)
+  // D/M/YYYY, D-M-YYYY, D.M.YYYY (separators interchangeable).
+  // Defaults to DD/MM/YYYY (EU). If the first part > 12 it's clearly day-first;
+  // if the second part > 12 it's clearly month-first (US M/D/YYYY) — swap.
   const sep = str.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
   if (sep) {
-    const [, d, mo, y] = sep;
+    const [, aRaw, bRaw, y] = sep;
+    let d = parseInt(aRaw, 10);
+    let mo = parseInt(bRaw, 10);
+    if (mo > 12 && d <= 12) { const t = d; d = mo; mo = t; }
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
     const yr = y.length === 2 ? `20${y}` : y;
-    return `${yr}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    return `${yr}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
   }
+
 
 
   // YYYYMMDD
