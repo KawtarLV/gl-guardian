@@ -29,7 +29,7 @@ export const parseExcel = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => ParseInput.parse(data))
   .handler(async ({ data }) => {
-    const { parseWorkbook, extractGlRows, extractInvoiceRows, detectShape } = await import("./excel.server");
+    const { parseWorkbook, extractGlRows, extractInvoiceRows, extractJournalRows, detectShape } = await import("./excel.server");
     const buf = Buffer.from(data.fileBase64, "base64");
     const sheets = parseWorkbook(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
     return sheets.map((s) => ({
@@ -40,6 +40,7 @@ export const parseExcel = createServerFn({ method: "POST" })
       shape: detectShape(s),
       glAccounts: extractGlRows(s),
       invoices: extractInvoiceRows(s).slice(0, 500),
+      journalRows: extractJournalRows(s),
     }));
   });
 
