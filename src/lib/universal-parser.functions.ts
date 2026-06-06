@@ -543,3 +543,58 @@ export const listColumnMappings = createServerFn({ method: "GET" })
       })),
     };
   });
+
+// ── Commit parsed transactions as invoices ───────────────────────────
+export const commitUniversalImport = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => CommitImportInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: mem } = await supabaseAdmin
+      .from("company_members")
+      .select("company_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const companyId = mem?.company_id as string | undefined;
+    if (!companyId) throw new Error("No company membership found for user");
+
+    const today = new Date().toISOString().slice(0, 10);
+    const rows = data.transactions
+      .map((t) => {
+        const amount = t.credit !== 0 ? t.credit : -t.debet;
+        if (amount === 0) return null;
+        return {
+          company_id: companyId,
+          amount,
+          invoice_date: t.date ?? today,
+          status: "open" as const,
+          external_ref: t.invoice_number ?? null,
+          gl_category: t.account_code ?? null,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+
+    if (rows.length === 0) throw new Error("No importable rows (all zero-amount)");
+
+    let inserted = 0;
+    const chunkSize = 500;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+      const { error, count } = await supabaseAdmin
+        .from("invoices")
+        .insert(chunk as never, { count: "exact" } as never);
+      if (error) throw new Error(error.message);
+      inserted += count ?? chunk.length;
+    }
+
+    if (data.uploadId) {
+      await supabaseAdmin
+        .from("file_uploads")
+        .update({ status: "imported" } as never)
+        .eq("id", data.uploadId);
+    }
+
+    return { inserted };
+  });
