@@ -1,44 +1,55 @@
-## Next build phases
+## Goal
 
-Foundation (Cloud + schema + auth shell) is live. Continue with the feature surface, in order:
+Make the user's real Dutch GL transaction export (`GB_8000_jan-dec_23.xlsx` — 1,097 sales-journal rows on account 8000 "Omzet hoog") drive the forecast without requiring them to find a chart-of-accounts or debtor list first. Keep the existing two flows untouched.
 
-### 1. GL Mapping Upload + Classification UI
-- Wire `/upload` route to drag-drop `.xlsx` (react-dropzone), POST to `uploadExcel` server fn that stores in `excel-uploads` bucket and parses with `xlsx`.
-- Preview first 20 rows in a table; user clicks "Classify".
-- `classifyAccounts` server fn: for each unique account → deterministic lookup in `gl_mappings` → vector search (cosine ≥0.85) → `gpt-4o-mini` JSON schema fallback. Writes results with `confidence`, `needs_review`, `source` (lookup/vector/ai).
-- Review table: editable category dropdown, confidence chip color-coded, bulk-approve ≥0.90, "Save & learn" persists corrections to `classification_feedback` + upserts `gl_mappings` with embedding.
+## Approach — Option A (journal-mode importer)
 
-### 2. Demo Data Importer
-- `/upload` second tab "Demo data".
-- `importDemoData` server fn: parses invoice-shaped sheets → upserts `customers` (by name), `invoices` (with `gl_category` via mapping engine), detects project-shaped rows → `projects` + `milestones`, assigns `avg_payment_lag_days` defaults by customer type.
-- Preview screen with counts (X customers, Y invoices, Z projects) → Commit button.
+Extend the existing Demo Data tab with auto-detection of a third shape: **GL transaction journal**. When the parser sees columns like `Rekening`, `Boeknummer`, `Trek`, `Debet`/`Credit`, `Boekingstekst`, `Dagboek`, `BTW`, it switches to journal mode instead of invoice mode.
 
-### 3. Forecast Engine Wiring
-- `runForecast` server fn calls deterministic `forecast-engine.ts` already in repo:
-  - Revenue: recurring detection → milestone schedule → seasonal fallback
-  - Costs: materials (invoice×0.23, 2wk pre-milestone), labour (×0.6 on rain weeks), subs (completion+lag)
-  - Weather consensus (Open-Meteo + OWM, cached in `weather_cache`)
-  - Project shifting recursive
-  - Every week → `audit_json.sources[]`; assertion rejects empty sources.
-- AI overlays (advisory, written to `audit_json.ai_overlays`): payment lag prediction (conf >80%), delay risk, z-score anomaly.
+### Journal-mode transform
 
-### 4. Forecast UI + Copilot
-- `/forecast`: 13-week table (sticky first col, week headers), Recharts line (inflow/outflow/net), weather/anomaly strip above.
-- Click week → drawer with full `audit_json` chain (revenue sources, cost sources, weather, AI overlays).
-- `/projects`: list with timeline bars and milestone status.
-- AI Copilot panel (right side, collapsible): `gpt-4o-mini` with strict system prompt — must cite week numbers and audit sources, refuse free-form numeric claims.
+1. **Synthetic invoices** — one row per journal posting:
+   - `amount` = `Credit` − `Debet` (revenue accounts net credit; flip sign for cost accounts later if needed)
+   - `invoiceDate` = `Datum`
+   - `dueDate` = `Datum` + 30 days (default; refined per customer type below)
+   - `customerName` = `"Klant " + Trek` when `Trek` is numeric and non-empty, else `Boekingstekst` first 40 chars, else `"Onbekend"`
+   - `description` = `Boekingstekst` + " · " + `Dagboek` + `Boeknummer`
+   - `glAccount` = `Rekening` (carried through so the forecast engine can categorize)
 
-### 5. Polish
-- Zod validation on every server fn input.
-- Error boundaries on each route.
-- Audit-trail invariant: forecast write throws if any week has empty `sources[]`.
-- Manual QA: upload sample → classify → import demo → run forecast → drill week → ask Copilot.
+2. **Customer aggregation** — group by `Trek`. For each unique trek id:
+   - Name = `"Klant " + Trek` (clearly marked as synthetic in the preview UI)
+   - Type inference falls back to `unknown` (no name signal) → default 30-day lag
+   - Surface a checkbox in preview: "These customers are anonymous — I'll rename later"
 
-### Secrets needed (will request on build)
-- `OPENAI_API_KEY` (required for classification + embeddings + Copilot)
-- `OPENWEATHER_API_KEY` (required for dual-provider weather consensus)
+3. **GL account auto-mapping** — because the file is single-account (8000 Omzet hoog), the importer also seeds one GL mapping row (`8000` → `revenue_sales`) and pushes it through the existing classify → save loop so the forecast engine recognizes the cashflow as revenue.
 
-### Out of scope (per MVP)
-Multi-user collab, forecast versioning beyond `forecast_runs`, Excel/PDF export, mobile layout, background job queue.
+### UI changes (Demo Data tab only)
 
-Approve to start with Phase 1 (GL Mapping UI). I'll request the two secrets in the same turn.
+- After parse, show a badge: `Detected shape: GL journal · 1 account · 1,097 postings · 47 unique trek ids`
+- Preview table swaps "Customer" column header for "Customer (synthetic)" when in journal mode
+- A small info banner above the preview explains: "This is a transaction journal, not an invoice list. We've created one synthetic customer per relation ID. For named customers, upload an Open Posten / Debiteuren export instead."
+- Commit button label changes to "Commit journal import"
+
+### What stays the same
+
+- Existing invoice-shape detection and import path
+- GL Mapping tab (untouched)
+- Forecast engine, audit trail, copilot
+- Schema — synthetic customers and invoices use existing `customers` / `invoices` tables
+
+## Technical details
+
+**Files to change:**
+- `src/lib/excel.server.ts` — add `detectJournalShape()` heuristic (looks for `Rekening` + `Boeknummer` + (`Debet`|`Credit`) headers, Dutch-aware). Return `{ shape: "journal", journalRows: [...] }` alongside existing `invoices`.
+- `src/lib/demo-import.functions.ts` — new `previewJournalImport` + `commitJournalImport` server fns. Reuses `customers`/`invoices` inserts; additionally inserts a `gl_mappings` row for the detected account if missing.
+- `src/routes/_authenticated/upload.tsx` — in `DemoDataTab`, branch on `shape === "journal"` after parse: render the journal preview (with synthetic-customer banner) instead of the invoice preview, wire the new mutation.
+
+**No DB migration needed** — synthetic rows fit existing tables.
+
+**Heuristic safety:** if both invoice-shape and journal-shape match (unlikely), prefer invoice-shape and surface a warning so the user can choose.
+
+## Out of scope (deferred)
+
+- Multi-account journal files (chart-of-accounts inference) — current file is single-account; we'll cross that bridge when a user uploads one
+- Renaming synthetic customers in bulk (post-import editor)
+- Option B (asking user for additional exports) — not blocking, can layer on later
