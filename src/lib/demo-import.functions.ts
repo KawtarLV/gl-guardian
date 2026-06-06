@@ -100,3 +100,129 @@ export const commitImport = createServerFn({ method: "POST" })
       invoices: invoiceRows.length,
     };
   });
+
+const JournalRowSchema = z.object({
+  rekening: z.string(),
+  trek: z.string().nullable(),
+  datum: z.string(),
+  amount: z.number(),
+  description: z.string(),
+});
+const JournalInput = z.object({
+  rows: z.array(JournalRowSchema).min(1).max(20000),
+});
+
+export const previewJournalImport = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => JournalInput.parse(d))
+  .handler(async ({ data }) => {
+    const accounts = new Map<string, { rekening: string; postings: number; net: number }>();
+    const customers = new Map<string, { name: string; trek: string | null; postings: number; net: number }>();
+    for (const r of data.rows) {
+      const a = accounts.get(r.rekening) ?? { rekening: r.rekening, postings: 0, net: 0 };
+      a.postings += 1; a.net += r.amount; accounts.set(r.rekening, a);
+      const key = r.trek ?? `__text:${r.description.slice(0, 30)}`;
+      const name = r.trek ? `Klant ${r.trek}` : (r.description.slice(0, 40) || "Onbekend");
+      const c = customers.get(key) ?? { name, trek: r.trek, postings: 0, net: 0 };
+      c.postings += 1; c.net += r.amount; customers.set(key, c);
+    }
+    return {
+      postings: data.rows.length,
+      accounts: Array.from(accounts.values()).sort((a, b) => Math.abs(b.net) - Math.abs(a.net)),
+      customerCount: customers.size,
+      net: data.rows.reduce((a, b) => a + b.amount, 0),
+      customers: Array.from(customers.values()).sort((a, b) => Math.abs(b.net) - Math.abs(a.net)).slice(0, 30),
+    };
+  });
+
+export const commitJournalImport = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => JournalInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { CUSTOMER_TYPE_DEFAULT_LAG, normalizeDescription } = await import("./categories");
+
+    const { data: mem } = await supabaseAdmin
+      .from("company_members").select("company_id").eq("user_id", userId).maybeSingle();
+    const companyId = mem?.company_id;
+    if (!companyId) throw new Error("No company found for user");
+
+    // Upsert one synthetic customer per unique trek (or per fallback name).
+    const customerKey = (r: { trek: string | null; description: string }) =>
+      r.trek ? `trek:${r.trek}` : `text:${r.description.slice(0, 30).toLowerCase()}`;
+    const customerName = (r: { trek: string | null; description: string }) =>
+      r.trek ? `Klant ${r.trek}` : (r.description.slice(0, 40) || "Onbekend");
+
+    const uniqueCustomers = new Map<string, string>();
+    for (const r of data.rows) uniqueCustomers.set(customerKey(r), customerName(r));
+
+    const customerIds = new Map<string, string>();
+    for (const [key, name] of uniqueCustomers) {
+      const { data: existing } = await supabaseAdmin
+        .from("customers").select("id").eq("company_id", companyId).eq("name", name).maybeSingle();
+      if (existing?.id) { customerIds.set(key, existing.id); continue; }
+      const { data: ins } = await supabaseAdmin
+        .from("customers").insert({
+          company_id: companyId,
+          name,
+          customer_type: "unknown",
+          avg_payment_lag_days: CUSTOMER_TYPE_DEFAULT_LAG.unknown ?? 30,
+        } as never).select("id").single();
+      if (ins?.id) customerIds.set(key, ins.id);
+    }
+
+    // Insert synthetic invoices: due_date = datum + 30d.
+    const invoiceRows = data.rows.map((r) => {
+      const due = new Date(r.datum);
+      due.setDate(due.getDate() + 30);
+      return {
+        company_id: companyId,
+        customer_id: customerIds.get(customerKey(r)) ?? null,
+        amount: r.amount,
+        invoice_date: r.datum,
+        due_date: due.toISOString().slice(0, 10),
+        description: r.description,
+        status: "open",
+      };
+    });
+    const { error: invErr } = await supabaseAdmin.from("invoices").insert(invoiceRows as never);
+    if (invErr) throw new Error(invErr.message);
+
+    // Seed a GL mapping per unique rekening (default to Revenue when net credit).
+    const accounts = new Map<string, { net: number; count: number }>();
+    for (const r of data.rows) {
+      const a = accounts.get(r.rekening) ?? { net: 0, count: 0 };
+      a.net += r.amount; a.count += 1; accounts.set(r.rekening, a);
+    }
+    let mappings = 0;
+    for (const [rek, agg] of accounts) {
+      const desc = `Account ${rek}`;
+      const norm = normalizeDescription(desc);
+      const category = agg.net > 0 ? "Revenue" : "Other Operating Expenses";
+      const { error } = await supabaseAdmin.from("gl_mappings").upsert(
+        {
+          company_id: companyId,
+          account_number: rek,
+          account_description: desc,
+          normalized_description: norm,
+          standardized_category: category,
+          confidence: 0.6,
+          needs_review: true,
+          approved: false,
+          source: "heuristic",
+          approved_by: userId,
+          approved_at: new Date().toISOString(),
+        } as never,
+        { onConflict: "company_id,normalized_description" } as never,
+      );
+      if (!error) mappings += 1;
+    }
+
+    return {
+      customers: customerIds.size,
+      invoices: invoiceRows.length,
+      mappings,
+    };
+  });
+
