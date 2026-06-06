@@ -12,12 +12,12 @@ export const getPeBoardData = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     // PE Board sees portfolio: all companies the user is a member of.
     const { data: company } = await supabaseAdmin
-      .from("companies").select("id, name, city, region").eq("id", data.companyId).single();
+      .from("companies").select("id, name, city").eq("id", data.companyId).single();
     const { data: members } = await supabaseAdmin
       .from("company_members").select("company_id").limit(50);
     const companyIds = Array.from(new Set([data.companyId, ...((members ?? []).map((m) => m.company_id))]));
     const { data: companies } = await supabaseAdmin
-      .from("companies").select("id, name, city, region").in("id", companyIds);
+      .from("companies").select("id, name, city").in("id", companyIds);
     const { data: forecasts } = await supabaseAdmin
       .from("forecast_weeks")
       .select("company_id, week_number, cash_in, cash_out, net_cash, running_balance, covenant_status")
