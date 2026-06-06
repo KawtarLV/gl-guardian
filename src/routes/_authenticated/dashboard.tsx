@@ -28,7 +28,7 @@ function Dashboard() {
       <div className="mt-10 p-6 rounded-lg border bg-muted/40">
         <h2 className="font-semibold mb-2">Build status</h2>
         <p className="text-sm text-muted-foreground">
-          Foundation is shipped: database schema, OpenAI + dual-weather services, deterministic forecast engine,
+          Foundation is shipped: database schema, Lovable AI + dual-weather services, deterministic forecast engine,
           Excel parsing, and the learning-loop scaffolding. The upload, mapping review, forecast dashboard,
           drill-down, and AI copilot UIs will be wired into these services in the next iteration. Ask me to
           continue building any of those screens.
