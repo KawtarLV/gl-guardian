@@ -817,5 +817,55 @@ export const commitUniversalImport = createServerFn({ method: "POST" })
         .eq("id", data.uploadId);
     }
 
+    // ── Rebuild monthly_summaries from invoices so the forecast baseline
+    // (avgWeeklyRevenue) reflects the latest dataset. Without this, every
+    // file produces identical numbers from the hard-coded fallback.
+    const monthly = new Map<string, { credit: number; debet: number }>();
+    for (const r of rows) {
+      const period = String(r.invoice_date).slice(0, 7); // YYYY-MM
+      const key = `${period}::${r.gl_category ?? ""}`;
+      const cur = monthly.get(key) ?? { credit: 0, debet: 0 };
+      if (r.amount >= 0) cur.credit += r.amount;
+      else cur.debet += -r.amount;
+      monthly.set(key, cur);
+    }
+    await supabaseAdmin
+      .from("monthly_summaries")
+      .delete()
+      .eq("company_id", companyId)
+      .eq("source_file", "smart_import");
+    const summaryRows = Array.from(monthly.entries()).map(([key, v]) => {
+      const [period, account_code] = key.split("::");
+      return {
+        company_id: companyId,
+        account_code: account_code || null,
+        account_description: account_code || "smart_import",
+        period,
+        total_credit: Math.round(v.credit * 100) / 100,
+        total_debet: Math.round(v.debet * 100) / 100,
+        source_file: "smart_import",
+      };
+    });
+    if (summaryRows.length) {
+      await supabaseAdmin
+        .from("monthly_summaries")
+        .upsert(summaryRows as never, {
+          onConflict: "company_id,account_code,account_description,period,source_file",
+        } as never);
+    }
+
+    // ── Auto-recompute forecast for all scenarios so every dashboard refreshes
+    // immediately after import (no manual "Recalculate" needed).
+    try {
+      const { runRecompute } = await import("./forecast-engine.functions");
+      await Promise.all([
+        runRecompute(companyId, "base"),
+        runRecompute(companyId, "wet"),
+        runRecompute(companyId, "dry"),
+      ]);
+    } catch (e) {
+      console.error("[commitUniversalImport] recompute failed", e);
+    }
+
     return { inserted, customers: customerIds.size };
   });
