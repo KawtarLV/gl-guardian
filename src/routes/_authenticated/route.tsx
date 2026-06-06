@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { getOrCreateCompany } from "@/lib/company.functions";
-import { Building2, Upload, LineChart, FolderKanban, LogOut } from "lucide-react";
+import { Building2, Upload, LineChart, FolderKanban, LogOut, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -43,6 +43,7 @@ function AuthedLayout() {
         <NavLink to="/dashboard" icon={<Building2 size={16} />}>Dashboard</NavLink>
         <NavLink to="/upload" icon={<Upload size={16} />}>Upload & Map</NavLink>
         <NavLink to="/forecast" icon={<LineChart size={16} />}>Forecast</NavLink>
+        <NavLink to="/cfo" icon={<BarChart3 size={16} />}>CFO Dashboard</NavLink>
         <NavLink to="/projects" icon={<FolderKanban size={16} />}>Projects</NavLink>
         <div className="mt-auto">
           <Button variant="ghost" size="sm" onClick={signOut} className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">

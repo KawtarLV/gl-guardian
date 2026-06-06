@@ -16,6 +16,7 @@ import { Route as AuthenticatedUploadRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
 import { Route as AuthenticatedForecastRouteImport } from './routes/_authenticated/forecast'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedCfoRouteImport } from './routes/_authenticated/cfo'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -51,10 +52,16 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedCfoRoute = AuthenticatedCfoRouteImport.update({
+  id: '/cfo',
+  path: '/cfo',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/cfo': typeof AuthenticatedCfoRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/forecast': typeof AuthenticatedForecastRoute
   '/projects': typeof AuthenticatedProjectsRoute
@@ -63,6 +70,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/cfo': typeof AuthenticatedCfoRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/forecast': typeof AuthenticatedForecastRoute
   '/projects': typeof AuthenticatedProjectsRoute
@@ -73,6 +81,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/_authenticated/cfo': typeof AuthenticatedCfoRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/forecast': typeof AuthenticatedForecastRoute
   '/_authenticated/projects': typeof AuthenticatedProjectsRoute
@@ -83,17 +92,26 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/cfo'
     | '/dashboard'
     | '/forecast'
     | '/projects'
     | '/upload'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/dashboard' | '/forecast' | '/projects' | '/upload'
+  to:
+    | '/'
+    | '/auth'
+    | '/cfo'
+    | '/dashboard'
+    | '/forecast'
+    | '/projects'
+    | '/upload'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/auth'
+    | '/_authenticated/cfo'
     | '/_authenticated/dashboard'
     | '/_authenticated/forecast'
     | '/_authenticated/projects'
@@ -157,10 +175,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/cfo': {
+      id: '/_authenticated/cfo'
+      path: '/cfo'
+      fullPath: '/cfo'
+      preLoaderRoute: typeof AuthenticatedCfoRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedCfoRoute: typeof AuthenticatedCfoRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedForecastRoute: typeof AuthenticatedForecastRoute
   AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRoute
@@ -168,6 +194,7 @@ interface AuthenticatedRouteRouteChildren {
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedCfoRoute: AuthenticatedCfoRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedForecastRoute: AuthenticatedForecastRoute,
   AuthenticatedProjectsRoute: AuthenticatedProjectsRoute,

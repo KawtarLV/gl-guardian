@@ -128,21 +128,36 @@ export type Database = {
       }
       companies: {
         Row: {
+          accounting_system: string | null
+          city: string | null
           created_at: string
           id: string
+          latitude: number | null
+          longitude: number | null
           name: string
+          slug: string | null
           updated_at: string
         }
         Insert: {
+          accounting_system?: string | null
+          city?: string | null
           created_at?: string
           id?: string
+          latitude?: number | null
+          longitude?: number | null
           name: string
+          slug?: string | null
           updated_at?: string
         }
         Update: {
+          accounting_system?: string | null
+          city?: string | null
           created_at?: string
           id?: string
+          latitude?: number | null
+          longitude?: number | null
           name?: string
+          slug?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -176,32 +191,82 @@ export type Database = {
           },
         ]
       }
+      covenants: {
+        Row: {
+          breach_warning_pct: number | null
+          company_id: string
+          created_at: string
+          current_value: number | null
+          id: string
+          measured_period: string | null
+          metric: string
+          threshold: number
+          updated_at: string
+        }
+        Insert: {
+          breach_warning_pct?: number | null
+          company_id: string
+          created_at?: string
+          current_value?: number | null
+          id?: string
+          measured_period?: string | null
+          metric: string
+          threshold: number
+          updated_at?: string
+        }
+        Update: {
+          breach_warning_pct?: number | null
+          company_id?: string
+          created_at?: string
+          current_value?: number | null
+          id?: string
+          measured_period?: string | null
+          metric?: string
+          threshold?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "covenants_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customers: {
         Row: {
           avg_payment_lag_days: number | null
           company_id: string
           created_at: string
+          customer_code: string | null
           customer_type: string
           id: string
           name: string
+          payment_count: number | null
           updated_at: string
         }
         Insert: {
           avg_payment_lag_days?: number | null
           company_id: string
           created_at?: string
+          customer_code?: string | null
           customer_type?: string
           id?: string
           name: string
+          payment_count?: number | null
           updated_at?: string
         }
         Update: {
           avg_payment_lag_days?: number | null
           company_id?: string
           created_at?: string
+          customer_code?: string | null
           customer_type?: string
           id?: string
           name?: string
+          payment_count?: number | null
           updated_at?: string
         }
         Relationships: [
@@ -319,11 +384,23 @@ export type Database = {
           cash_out: number
           company_id: string
           confidence_score: number
+          covenant_headroom: number | null
+          covenant_status: string | null
           created_at: string
-          forecast_run_id: string
+          driver_materials_outflow: number | null
+          driver_milestone_billing: number | null
+          driver_payment_lag_adjustment: number | null
+          driver_subcontractor_payments: number | null
+          driver_weather_impact: number | null
+          forecast_run_id: string | null
           id: string
+          is_frost: boolean | null
+          lost_days: number | null
           net_cash: number
+          rain_mm: number | null
           running_balance: number
+          scenario: string
+          week_end: string | null
           week_number: number
           week_start: string
         }
@@ -334,11 +411,23 @@ export type Database = {
           cash_out?: number
           company_id: string
           confidence_score?: number
+          covenant_headroom?: number | null
+          covenant_status?: string | null
           created_at?: string
-          forecast_run_id: string
+          driver_materials_outflow?: number | null
+          driver_milestone_billing?: number | null
+          driver_payment_lag_adjustment?: number | null
+          driver_subcontractor_payments?: number | null
+          driver_weather_impact?: number | null
+          forecast_run_id?: string | null
           id?: string
+          is_frost?: boolean | null
+          lost_days?: number | null
           net_cash?: number
+          rain_mm?: number | null
           running_balance?: number
+          scenario?: string
+          week_end?: string | null
           week_number: number
           week_start: string
         }
@@ -349,11 +438,23 @@ export type Database = {
           cash_out?: number
           company_id?: string
           confidence_score?: number
+          covenant_headroom?: number | null
+          covenant_status?: string | null
           created_at?: string
-          forecast_run_id?: string
+          driver_materials_outflow?: number | null
+          driver_milestone_billing?: number | null
+          driver_payment_lag_adjustment?: number | null
+          driver_subcontractor_payments?: number | null
+          driver_weather_impact?: number | null
+          forecast_run_id?: string | null
           id?: string
+          is_frost?: boolean | null
+          lost_days?: number | null
           net_cash?: number
+          rain_mm?: number | null
           running_balance?: number
+          scenario?: string
+          week_end?: string | null
           week_number?: number
           week_start?: string
         }
@@ -671,34 +772,55 @@ export type Database = {
         Row: {
           company_id: string
           created_at: string
+          days_delayed: number | null
+          delay_reason: string | null
           id: string
           invoice_amount: number
+          invoiced: boolean | null
+          labour_cost: number | null
+          materials_cost: number | null
           name: string
+          paid: boolean | null
           planned_date: string
           project_id: string
           shifted_date: string | null
+          subcontractor_cost: number | null
           updated_at: string
         }
         Insert: {
           company_id: string
           created_at?: string
+          days_delayed?: number | null
+          delay_reason?: string | null
           id?: string
           invoice_amount?: number
+          invoiced?: boolean | null
+          labour_cost?: number | null
+          materials_cost?: number | null
           name: string
+          paid?: boolean | null
           planned_date: string
           project_id: string
           shifted_date?: string | null
+          subcontractor_cost?: number | null
           updated_at?: string
         }
         Update: {
           company_id?: string
           created_at?: string
+          days_delayed?: number | null
+          delay_reason?: string | null
           id?: string
           invoice_amount?: number
+          invoiced?: boolean | null
+          labour_cost?: number | null
+          materials_cost?: number | null
           name?: string
+          paid?: boolean | null
           planned_date?: string
           project_id?: string
           shifted_date?: string | null
+          subcontractor_cost?: number | null
           updated_at?: string
         }
         Relationships: [
@@ -833,6 +955,9 @@ export type Database = {
       }
       projects: {
         Row: {
+          city: string | null
+          client_name: string | null
+          client_type: string | null
           company_id: string
           contractor: string | null
           created_at: string
@@ -844,9 +969,16 @@ export type Database = {
           start_date: string | null
           status: string
           total_labour_cost: number
+          total_materials_cost: number | null
+          total_value: number | null
           updated_at: string
+          weather_sensitive: boolean | null
+          wip_amount: number | null
         }
         Insert: {
+          city?: string | null
+          client_name?: string | null
+          client_type?: string | null
           company_id: string
           contractor?: string | null
           created_at?: string
@@ -858,9 +990,16 @@ export type Database = {
           start_date?: string | null
           status?: string
           total_labour_cost?: number
+          total_materials_cost?: number | null
+          total_value?: number | null
           updated_at?: string
+          weather_sensitive?: boolean | null
+          wip_amount?: number | null
         }
         Update: {
+          city?: string | null
+          client_name?: string | null
+          client_type?: string | null
           company_id?: string
           contractor?: string | null
           created_at?: string
@@ -872,7 +1011,11 @@ export type Database = {
           start_date?: string | null
           status?: string
           total_labour_cost?: number
+          total_materials_cost?: number | null
+          total_value?: number | null
           updated_at?: string
+          weather_sensitive?: boolean | null
+          wip_amount?: number | null
         }
         Relationships: [
           {
