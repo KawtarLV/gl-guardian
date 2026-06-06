@@ -88,7 +88,6 @@ export const commitImport = createServerFn({ method: "POST" })
         amount: inv.amount,
         invoice_date: inv.invoiceDate,
         due_date: inv.dueDate,
-        description: inv.description,
         status: "open",
       };
     });
@@ -182,7 +181,6 @@ export const commitJournalImport = createServerFn({ method: "POST" })
         amount: r.amount,
         invoice_date: r.datum,
         due_date: due.toISOString().slice(0, 10),
-        description: r.description,
         status: "open",
       };
     });
