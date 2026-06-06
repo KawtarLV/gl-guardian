@@ -29,8 +29,9 @@ export function parseDate(raw: string | number | null | undefined): string | nul
 
 
   // YYYYMMDD
-  m = str.match(/^(\d{4})(\d{2})(\d{2})$/);
-  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  const ymd = str.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (ymd) return `${ymd[1]}-${ymd[2]}-${ymd[3]}`;
+
 
   // Numeric Excel serial as string
   if (/^\d+(\.\d+)?$/.test(str)) {
