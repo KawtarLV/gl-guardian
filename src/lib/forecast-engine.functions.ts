@@ -326,7 +326,7 @@ export const recomputeForecast = createServerFn({ method: "POST" })
     // Wipe + insert for (company, scenario)
     await supabaseAdmin.from("forecast_weeks")
       .delete().eq("company_id", companyId).eq("scenario", scenario);
-    const { error } = await supabaseAdmin.from("forecast_weeks").insert(weeks);
+    const { error } = await supabaseAdmin.from("forecast_weeks").insert(weeks as never);
     if (error) throw new Error(error.message);
 
     return { ok: true, weekCount: weeks.length };
