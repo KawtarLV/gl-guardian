@@ -24,14 +24,17 @@ export const runForecast = createServerFn({ method: "POST" })
 
     const companyId = await loadCompanyId(userId);
 
-    const [invR, payR, custR, projR, milR, msR] = await Promise.all([
+    const [invR, payR, custR, projR, milR, msR, uploadR] = await Promise.all([
       supabaseAdmin.from("invoices").select("*").eq("company_id", companyId),
       supabaseAdmin.from("payments").select("*").eq("company_id", companyId),
       supabaseAdmin.from("customers").select("*").eq("company_id", companyId),
       supabaseAdmin.from("projects").select("*").eq("company_id", companyId),
       supabaseAdmin.from("milestones").select("*").eq("company_id", companyId),
       supabaseAdmin.from("monthly_summaries").select("period,total_credit").eq("company_id", companyId),
+      supabaseAdmin.from("file_uploads").select("id, filename, total_rows, parsed_rows, uploaded_at").eq("company_id", companyId).order("uploaded_at", { ascending: false }).limit(1).maybeSingle(),
     ]);
+
+    const latestUpload = uploadR.data ?? null;
 
     const region =
       (projR.data?.[0] as { region?: string | null } | undefined)?.region ?? "amsterdam";
@@ -92,6 +95,22 @@ export const runForecast = createServerFn({ method: "POST" })
       monthRevenue,
     });
 
+    const sourceByInvoiceId = new Map<string, string>();
+    const uploadId = latestUpload?.id ? String(latestUpload.id) : null;
+    for (const inv of invR.data ?? []) {
+      const ref = String(inv.external_ref ?? "");
+      if (uploadId && ref.startsWith(`upload:${uploadId}:`)) sourceByInvoiceId.set(inv.id, String(latestUpload?.filename ?? "uploaded file"));
+    }
+    for (const w of weeks) {
+      for (const s of w.audit.sources) {
+        if (s.sourceId && sourceByInvoiceId.has(s.sourceId)) {
+          const filename = sourceByInvoiceId.get(s.sourceId)!;
+          s.description = `${s.description} · source: ${filename}`;
+          s.meta = { ...(s.meta ?? {}), sourceFile: filename };
+        }
+      }
+    }
+
     for (const w of weeks) {
       if (w.cashIn + w.cashOut > 0 && w.audit.sources.length === 0) {
         throw new Error(`Audit-trail invariant: week ${w.weekNumber} has values without sources`);
@@ -101,7 +120,7 @@ export const runForecast = createServerFn({ method: "POST" })
     const { data: run, error: runErr } = await supabaseAdmin
       .from("forecast_runs").insert({
         company_id: companyId, created_by: userId, starting_balance: 0,
-        notes: `Region: ${region}`,
+        notes: `Region: ${region}${latestUpload?.filename ? ` · Source file: ${latestUpload.filename}` : ""}`,
       } as never).select("id").single();
     if (runErr) throw new Error(`forecast_runs insert failed: ${runErr.message}`);
     if (run?.id) {
@@ -133,7 +152,7 @@ export const runForecast = createServerFn({ method: "POST" })
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return JSON.parse(JSON.stringify({ runId: run?.id ?? null, weeks, weather })) as any;
+    return JSON.parse(JSON.stringify({ runId: run?.id ?? null, weeks, weather, importSource: latestUpload })) as any;
   });
 
 export const getLatestForecast = createServerFn({ method: "GET" })
@@ -151,8 +170,15 @@ export const getLatestForecast = createServerFn({ method: "GET" })
       .eq("forecast_run_id", run.id)
       .eq("scenario", "legacy")
       .order("week_number", { ascending: true });
+    const { data: upload } = await supabaseAdmin
+      .from("file_uploads")
+      .select("id, filename, total_rows, parsed_rows, uploaded_at")
+      .eq("company_id", companyId)
+      .order("uploaded_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return JSON.parse(JSON.stringify({ run, weeks: weeks ?? [] })) as any;
+    return JSON.parse(JSON.stringify({ run, weeks: weeks ?? [], importSource: upload ?? null })) as any;
   });
 
 export const getProjectsList = createServerFn({ method: "GET" })
