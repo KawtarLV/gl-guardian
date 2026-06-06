@@ -347,6 +347,10 @@ export const parseFileUniversal = createServerFn({ method: "POST" })
         if (insertRows.length) {
           await supabaseAdmin
             .from("monthly_summaries" as never)
+            .delete()
+            .eq("company_id", companyId);
+          await supabaseAdmin
+            .from("monthly_summaries" as never)
             .upsert(insertRows as never, {
               onConflict: "company_id,account_code,account_description,period,source_file",
             } as never);
@@ -623,7 +627,7 @@ Reply ONLY as valid JSON: {"field": "...", "confidence": 0.0-1.0, "reasoning": "
       headerRowIndex: headerIndex,
       fileContext: mergedContext,
       detections,
-      transactions: transactions.slice(0, 1000),
+      transactions,
       transactionCount: transactions.length,
       qualityScore,
       needsAIReview,
