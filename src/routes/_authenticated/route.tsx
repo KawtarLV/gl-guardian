@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { getOrCreateCompany } from "@/lib/company.functions";
-import { Building2, Upload, LineChart, FolderKanban, LogOut } from "lucide-react";
+import { Building2, Upload, LineChart, FolderKanban, LogOut, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/_authenticated")({
