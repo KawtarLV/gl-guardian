@@ -199,7 +199,7 @@ export const parseFileUniversal = createServerFn({ method: "POST" })
     const { userId } = context;
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { parseWorkbookRaw } = await import("./excel.server");
-    const { claudeMessage } = await import("./ai.server");
+    const { lovableAi } = await import("./ai.server");
 
     // Find user's company
     const { data: mem } = await supabaseAdmin
