@@ -282,10 +282,143 @@ export const parseFileUniversal = createServerFn({ method: "POST" })
     const sheets = parseWorkbookRaw(
       buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
     );
-    const sheet = sheets.find((s) => s.rows.length > 0) ?? sheets[0];
-    if (!sheet) throw new Error("File contains no sheets");
+    const firstSheet = sheets.find((s) => s.rows.length > 0) ?? sheets[0];
+    if (!firstSheet) throw new Error("File contains no sheets");
 
-    // ── Find dataset type + real header row, skipping metadata ──
+    // ── MULTI-SHEET MONTHLY PIVOT: detect monthly_summary on ANY sheet.
+    // Each sheet may represent a different year (e.g. "2023", "2024",
+    // "2025", "2026YTD"). The year is taken from fileContext, sheet
+    // metadata, or — most commonly — the sheet name itself.
+    const monthlySheets = sheets
+      .map((s) => ({ sheet: s, detection: findHeaderRow(s.rows) }))
+      .filter((x) => x.detection.datasetType === "monthly_summary" && x.sheet.rows.length > 0);
+
+    if (monthlySheets.length > 0) {
+      type SummaryRow = {
+        account_code: string;
+        account_description: string;
+        monthly_totals: Record<string, number>;
+        annual_total: number;
+      };
+      const allSummaryRows: SummaryRow[] = [];
+      const sheetYears: string[] = [];
+
+      for (const { sheet: s, detection } of monthlySheets) {
+        const { headerIndex, dataStartIndex, context: ctx, skipColumns } = detection;
+        const yearMatch = s.sheetName.match(/(\d{4})/);
+        const year = (data.fileContext?.year)
+          ?? ctx.year
+          ?? (yearMatch ? parseInt(yearMatch[1], 10) : new Date().getFullYear());
+        sheetYears.push(`${s.sheetName}→${year}`);
+
+        const headers = (s.rows[headerIndex] ?? []).map((h) => (h ?? "").trim());
+        const rows = s.rows
+          .slice(dataStartIndex)
+          .filter((r) => r.some((c) => c?.trim()))
+          .map((r) => headers.map((_, i) => (r[i] ?? "").trim()));
+
+        const monthCols: { idx: number; period: string }[] = [];
+        headers.forEach((h, idx) => {
+          if (skipColumns.includes(idx)) return;
+          const key = String(h ?? "").toLowerCase().trim().slice(0, 3);
+          const m = MONTH_TO_NUM[key];
+          if (m) monthCols.push({ idx, period: `${year}-${m}` });
+        });
+        const totalIdx = headers.findIndex((h) => {
+          const t = String(h ?? "").toLowerCase().trim();
+          return t === "totaal" || t === "total";
+        });
+
+        for (const row of rows) {
+          const firstCell = (row[0] ?? "").trim() || (row[1] ?? "").trim();
+          if (!firstCell) continue;
+          const m = firstCell.match(/^(\d{4,6})\s+(.+)$/);
+          // Skip subtotal / heading rows like "Netto-omzet" (no leading account code).
+          if (!m) continue;
+          const account_code = m[1];
+          const account_description = m[2];
+          const monthly_totals: Record<string, number> = {};
+          for (const { idx, period } of monthCols) {
+            const v = parseAmount(row[idx]);
+            if (v !== 0) monthly_totals[period] = v;
+          }
+          if (Object.keys(monthly_totals).length === 0) continue;
+          const annual_total = totalIdx >= 0
+            ? parseAmount(row[totalIdx])
+            : Object.values(monthly_totals).reduce((a, b) => a + b, 0);
+          allSummaryRows.push({ account_code, account_description, monthly_totals, annual_total });
+        }
+      }
+
+      if (companyId && allSummaryRows.length) {
+        const insertRows = allSummaryRows.flatMap((r) =>
+          Object.entries(r.monthly_totals).map(([period, amount]) => ({
+            company_id: companyId,
+            account_code: r.account_code || null,
+            account_description: r.account_description,
+            period,
+            total_credit: amount >= 0 ? amount : 0,
+            total_debet: amount < 0 ? -amount : 0,
+            source_file: "smart_import",
+          })),
+        );
+        await supabaseAdmin
+          .from("monthly_summaries" as never)
+          .delete()
+          .eq("company_id", companyId)
+          .eq("source_file", "smart_import");
+        if (insertRows.length) {
+          await supabaseAdmin
+            .from("monthly_summaries" as never)
+            .upsert(insertRows as never, {
+              onConflict: "company_id,account_code,account_description,period,source_file",
+            } as never);
+        }
+
+        // Auto-recompute forecast for all scenarios so every dashboard
+        // refreshes immediately — same as the transaction-shape import path.
+        try {
+          const { runRecompute } = await import("./forecast-engine.functions");
+          await Promise.all([
+            runRecompute(companyId, "base"),
+            runRecompute(companyId, "wet"),
+            runRecompute(companyId, "dry"),
+          ]);
+        } catch (e) {
+          console.error("[parseFileUniversal monthly_pivot] recompute failed", e);
+        }
+      }
+
+      const firstHeaders = (monthlySheets[0].sheet.rows[monthlySheets[0].detection.headerIndex] ?? [])
+        .map((h) => (h ?? "").trim());
+      return {
+        type: "monthly_summary" as const,
+        uploadId: null,
+        companyId,
+        headers: firstHeaders,
+        sheetName: monthlySheets.map((m) => m.sheet.sheetName).join(", "),
+        headerRowIndex: monthlySheets[0].detection.headerIndex,
+        fileContext: { ...(data.fileContext ?? {}) } as FileContext,
+        detections: [] as ColumnDetectionResult[],
+        transactions: [] as ParsedTransaction[],
+        transactionCount: 0,
+        qualityScore: 100,
+        needsAIReview: sheetYears, // surface which sheets→years were parsed
+        monthlySummary: allSummaryRows,
+        reconciliation: {
+          total_credit: Math.round(
+            allSummaryRows.reduce((s, r) => s + Math.max(0, r.annual_total), 0) * 100,
+          ) / 100,
+          total_debet: Math.round(
+            allSummaryRows.reduce((s, r) => s + Math.max(0, -r.annual_total), 0) * 100,
+          ) / 100,
+          row_count: allSummaryRows.length,
+        },
+      };
+    }
+
+    // ── Single-sheet fallback for transaction-shape files ─────────────
+    const sheet = firstSheet;
     const { datasetType, headerIndex, dataStartIndex, context: fileContext, skipColumns } =
       findHeaderRow(sheet.rows);
     const mergedContext: FileContext = { ...fileContext, ...(data.fileContext ?? {}) };
@@ -296,90 +429,7 @@ export const parseFileUniversal = createServerFn({ method: "POST" })
       .filter((r) => r.some((c) => c?.trim()))
       .map((r) => headers.map((_, i) => (r[i] ?? "").trim()));
 
-    // ── TYPE A: Monthly summary — different shape entirely ───────
-    if (datasetType === "monthly_summary") {
-      const year = mergedContext.year ?? new Date().getFullYear();
-      const monthCols: { idx: number; period: string }[] = [];
-      headers.forEach((h, idx) => {
-        if (skipColumns.includes(idx)) return;
-        const key = String(h ?? "").toLowerCase().trim().slice(0, 3);
-        const m = MONTH_TO_NUM[key];
-        if (m) monthCols.push({ idx, period: `${year}-${m}` });
-      });
-      const totalIdx = headers.findIndex((h) => {
-        const t = String(h ?? "").toLowerCase().trim();
-        return t === "totaal" || t === "total";
-      });
 
-      const summaryRows = rows
-        .map((row) => {
-          const firstCell = (row[0] ?? "").trim() || (row[1] ?? "").trim();
-          if (!firstCell) return null;
-          const m = firstCell.match(/^(\d{4,6})\s+(.+)$/);
-          const account_code = m ? m[1] : "";
-          const account_description = m ? m[2] : firstCell;
-          const monthly_totals: Record<string, number> = {};
-          for (const { idx, period } of monthCols) {
-            const v = parseAmount(row[idx]);
-            if (v !== 0) monthly_totals[period] = v;
-          }
-          const annual_total = totalIdx >= 0 ? parseAmount(row[totalIdx]) : 0;
-          return { account_code, account_description, monthly_totals, annual_total };
-        })
-        .filter(Boolean) as Array<{
-          account_code: string;
-          account_description: string;
-          monthly_totals: Record<string, number>;
-          annual_total: number;
-        }>;
-
-      if (companyId && summaryRows.length) {
-        const insertRows = summaryRows.flatMap((r) =>
-          Object.entries(r.monthly_totals).map(([period, amount]) => ({
-            company_id: companyId,
-            account_code: r.account_code || null,
-            account_description: r.account_description,
-            period,
-            total_credit: amount,
-            source_file: data.filename,
-          })),
-        );
-        if (insertRows.length) {
-          await supabaseAdmin
-            .from("monthly_summaries" as never)
-            .delete()
-            .eq("company_id", companyId);
-          await supabaseAdmin
-            .from("monthly_summaries" as never)
-            .upsert(insertRows as never, {
-              onConflict: "company_id,account_code,account_description,period,source_file",
-            } as never);
-        }
-      }
-
-      return {
-        type: "monthly_summary" as const,
-        uploadId: null,
-        companyId,
-        headers,
-        sheetName: sheet.sheetName,
-        headerRowIndex: headerIndex,
-        fileContext: mergedContext,
-        detections: [] as ColumnDetectionResult[],
-        transactions: [] as ParsedTransaction[],
-        transactionCount: 0,
-        qualityScore: 100,
-        needsAIReview: [] as string[],
-        monthlySummary: summaryRows,
-        reconciliation: {
-          total_credit: Math.round(
-            summaryRows.reduce((s, r) => s + r.annual_total, 0) * 100,
-          ) / 100,
-          total_debet: 0,
-          row_count: summaryRows.length,
-        },
-      };
-    }
 
 
     // ── Detect each column ────────────────────────────────────────
