@@ -87,12 +87,8 @@ const recomputeInput = z.object({
   scenario: z.enum(["base", "wet", "dry"]).default("base"),
 });
 
-export const recomputeForecast = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => recomputeInput.parse(d))
-  .handler(async ({ data }) => {
+export async function runRecompute(companyId: string, scenario: Scenario) {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { companyId, scenario } = data;
 
     const [companyRes, milestonesRes, customersRes, covenantsRes, monthlyRes] = await Promise.all([
       supabaseAdmin.from("companies").select("*").eq("id", companyId).single(),
