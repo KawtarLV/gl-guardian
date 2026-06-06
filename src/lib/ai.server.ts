@@ -100,6 +100,31 @@ export async function chatCompletion(
   return data.choices[0].message.content as string;
 }
 
+/** Call Anthropic Claude. Returns null when ANTHROPIC_API_KEY is not set. */
+export async function claudeMessage(
+  prompt: string,
+  opts: { model?: string; maxTokens?: number } = {},
+): Promise<string | null> {
+  const k = process.env.ANTHROPIC_API_KEY;
+  if (!k) return null;
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": k,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: opts.model ?? "claude-haiku-4-5-20251001",
+      max_tokens: opts.maxTokens ?? 300,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+  if (!res.ok) throw new Error(`Claude API error ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return data.content?.[0]?.text ?? null;
+}
+
 // pgvector accepts a text representation like '[0.1,0.2,...]'
 export function toVectorLiteral(vec: number[]): string {
   return `[${vec.join(",")}]`;
