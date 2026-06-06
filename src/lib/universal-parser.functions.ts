@@ -23,7 +23,7 @@ export interface ColumnDetectionResult {
   original_name: string;
   standard_field: StandardField;
   confidence: number;
-  source: "rule_engine" | "sample_analysis" | "previous_approval" | "claude" | "unknown";
+  source: "rule_engine" | "sample_analysis" | "previous_approval" | "ai" | "unknown";
   needs_review: boolean;
   reasoning?: string;
   mapping_id?: string;
@@ -199,7 +199,7 @@ export const parseFileUniversal = createServerFn({ method: "POST" })
     const { userId } = context;
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { parseWorkbookRaw } = await import("./excel.server");
-    const { claudeMessage } = await import("./ai.server");
+    const { lovableAi } = await import("./ai.server");
 
     // Find user's company
     const { data: mem } = await supabaseAdmin
@@ -298,17 +298,17 @@ account_code | period | date | invoice_number | customer_code | debet | credit |
 
 Reply ONLY as valid JSON: {"field": "...", "confidence": 0.0-1.0, "reasoning": "..."}`;
 
-        const reply = await claudeMessage(prompt, { maxTokens: 200 });
+        const reply = await lovableAi(prompt, { system: "You are a strict JSON-only classifier for Dutch accounting column headers." });
         if (reply) {
           const cleaned = reply.replace(/```json\s*|\s*```/g, "").trim();
           const parsed = JSON.parse(cleaned);
           if ((STANDARD_FIELDS as readonly string[]).includes(parsed.field)) aiField = parsed.field;
           aiConfidence = Math.max(0, Math.min(1, Number(parsed.confidence) || 0.5));
           aiReasoning = String(parsed.reasoning ?? aiReasoning);
-          aiSource = "claude";
+          aiSource = "ai";
         }
       } catch (e) {
-        aiReasoning = `Claude failed: ${e instanceof Error ? e.message : String(e)}`;
+        aiReasoning = `AI failed: ${e instanceof Error ? e.message : String(e)}`;
       }
 
       const { data: saved } = await supabaseAdmin

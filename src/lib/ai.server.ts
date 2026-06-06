@@ -100,29 +100,32 @@ export async function chatCompletion(
   return data.choices[0].message.content as string;
 }
 
-/** Call Anthropic Claude. Returns null when ANTHROPIC_API_KEY is not set. */
-export async function claudeMessage(
+/** Call Lovable AI Gateway (default: Gemini 3 Flash). Returns null when LOVABLE_API_KEY is not set. */
+export async function lovableAi(
   prompt: string,
-  opts: { model?: string; maxTokens?: number } = {},
+  opts: { model?: string; system?: string; temperature?: number } = {},
 ): Promise<string | null> {
-  const k = process.env.ANTHROPIC_API_KEY;
+  const k = process.env.LOVABLE_API_KEY;
   if (!k) return null;
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const messages: { role: string; content: string }[] = [];
+  if (opts.system) messages.push({ role: "system", content: opts.system });
+  messages.push({ role: "user", content: prompt });
+  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": k,
-      "anthropic-version": "2023-06-01",
+      "Lovable-API-Key": k,
+      "X-Lovable-AIG-SDK": "vercel-ai-sdk",
     },
     body: JSON.stringify({
-      model: opts.model ?? "claude-haiku-4-5-20251001",
-      max_tokens: opts.maxTokens ?? 300,
-      messages: [{ role: "user", content: prompt }],
+      model: opts.model ?? "google/gemini-3-flash-preview",
+      messages,
+      temperature: opts.temperature ?? 0,
     }),
   });
-  if (!res.ok) throw new Error(`Claude API error ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw new Error(`Lovable AI error ${res.status}: ${await res.text()}`);
   const data = await res.json();
-  return data.content?.[0]?.text ?? null;
+  return data.choices?.[0]?.message?.content ?? null;
 }
 
 // pgvector accepts a text representation like '[0.1,0.2,...]'
