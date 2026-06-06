@@ -380,9 +380,41 @@ export const parseFileUniversal = createServerFn({ method: "POST" })
 
     // ── Detect each column ────────────────────────────────────────
     const detections: ColumnDetectionResult[] = [];
+    let rekeningSeen = 0;
     for (let idx = 0; idx < headers.length; idx++) {
       const header = headers[idx] || `(empty col ${idx + 1})`;
       const samples = rows.slice(0, 10).map((r) => r[idx] || "").filter((v) => v.trim()).slice(0, 5);
+
+      // Skip columns marked as irrelevant (empty headers with no data, etc.)
+      if (skipColumns.includes(idx)) {
+        detections.push({
+          original_name: header,
+          standard_field: "unknown",
+          confidence: 0,
+          source: "unknown",
+          needs_review: false,
+          reasoning: "Skipped — empty column",
+          sample_values: samples,
+        });
+        continue;
+      }
+
+      // Special case: duplicate "Rekening" in Type C — first = account_code, second = period
+      const normHeader = String(header).toLowerCase().trim();
+      if (normHeader === "rekening") {
+        const field: StandardField = rekeningSeen === 0 ? "account_code" : "period";
+        rekeningSeen++;
+        detections.push({
+          original_name: header,
+          standard_field: field,
+          confidence: 1.0,
+          source: "rule_engine",
+          needs_review: false,
+          reasoning: rekeningSeen === 1 ? `Duplicate "Rekening" — first occurrence treated as account code` : `Duplicate "Rekening" — second occurrence treated as period`,
+          sample_values: samples,
+        });
+        continue;
+      }
 
       // Layer 1: rule engine (skip if header is empty/__EMPTY)
       if (header && !header.startsWith("__EMPTY") && !header.startsWith("(empty")) {
