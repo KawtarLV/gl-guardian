@@ -753,6 +753,13 @@ export const commitUniversalImport = createServerFn({ method: "POST" })
 
     if (rows.length === 0) throw new Error("No importable rows (all zero-amount)");
 
+    await supabaseAdmin
+      .from("invoices")
+      .delete()
+      .eq("company_id", companyId)
+      .is("project_id", null)
+      .is("milestone_id", null);
+
     let inserted = 0;
     const chunkSize = 500;
     for (let i = 0; i < rows.length; i += chunkSize) {
