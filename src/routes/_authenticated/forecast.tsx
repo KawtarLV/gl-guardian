@@ -51,6 +51,7 @@ function ForecastPage() {
   });
 
   const weeks: Week[] = (latest.data?.weeks ?? []) as Week[];
+  const source = latest.data?.importSource as { filename?: string; parsed_rows?: number; total_rows?: number; uploaded_at?: string } | null | undefined;
   const chartData = weeks.map((w) => ({
     week: `W${w.week_number}`,
     inflow: num(w.cash_in),
@@ -64,7 +65,11 @@ function ForecastPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-semibold">13-Week Forecast</h1>
-          <p className="text-muted-foreground text-sm">Deterministic engine · weather-adjusted · full audit trail</p>
+          <p className="text-muted-foreground text-sm">
+            {source?.filename
+              ? `Using ${source.filename} · ${source.parsed_rows ?? source.total_rows ?? 0} imported rows · full audit trail`
+              : "Deterministic engine · weather-adjusted · full audit trail"}
+          </p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setCopilotOpen(true)}>
