@@ -285,8 +285,9 @@ export const parseFileUniversal = createServerFn({ method: "POST" })
     const sheet = sheets.find((s) => s.rows.length > 0) ?? sheets[0];
     if (!sheet) throw new Error("File contains no sheets");
 
-    // ── Find the real header row, skipping metadata ──────────────
-    const { headerIndex, dataStartIndex, context: fileContext } = findHeaderRow(sheet.rows);
+    // ── Find dataset type + real header row, skipping metadata ──
+    const { datasetType, headerIndex, dataStartIndex, context: fileContext, skipColumns } =
+      findHeaderRow(sheet.rows);
     const mergedContext: FileContext = { ...fileContext, ...(data.fileContext ?? {}) };
 
     const headers = (sheet.rows[headerIndex] ?? []).map((h) => (h ?? "").trim());
@@ -294,6 +295,88 @@ export const parseFileUniversal = createServerFn({ method: "POST" })
       .slice(dataStartIndex)
       .filter((r) => r.some((c) => c?.trim()))
       .map((r) => headers.map((_, i) => (r[i] ?? "").trim()));
+
+    // ── TYPE A: Monthly summary — different shape entirely ───────
+    if (datasetType === "monthly_summary") {
+      const year = mergedContext.year ?? new Date().getFullYear();
+      const monthCols: { idx: number; period: string }[] = [];
+      headers.forEach((h, idx) => {
+        if (skipColumns.includes(idx)) return;
+        const key = String(h ?? "").toLowerCase().trim().slice(0, 3);
+        const m = MONTH_TO_NUM[key];
+        if (m) monthCols.push({ idx, period: `${year}-${m}` });
+      });
+      const totalIdx = headers.findIndex((h) => {
+        const t = String(h ?? "").toLowerCase().trim();
+        return t === "totaal" || t === "total";
+      });
+
+      const summaryRows = rows
+        .map((row) => {
+          const firstCell = (row[0] ?? "").trim() || (row[1] ?? "").trim();
+          if (!firstCell) return null;
+          const m = firstCell.match(/^(\d{4,6})\s+(.+)$/);
+          const account_code = m ? m[1] : "";
+          const account_description = m ? m[2] : firstCell;
+          const monthly_totals: Record<string, number> = {};
+          for (const { idx, period } of monthCols) {
+            const v = parseAmount(row[idx]);
+            if (v !== 0) monthly_totals[period] = v;
+          }
+          const annual_total = totalIdx >= 0 ? parseAmount(row[totalIdx]) : 0;
+          return { account_code, account_description, monthly_totals, annual_total };
+        })
+        .filter(Boolean) as Array<{
+          account_code: string;
+          account_description: string;
+          monthly_totals: Record<string, number>;
+          annual_total: number;
+        }>;
+
+      if (companyId && summaryRows.length) {
+        const insertRows = summaryRows.flatMap((r) =>
+          Object.entries(r.monthly_totals).map(([period, amount]) => ({
+            company_id: companyId,
+            account_code: r.account_code || null,
+            account_description: r.account_description,
+            period,
+            total_credit: amount,
+            source_file: data.filename,
+          })),
+        );
+        if (insertRows.length) {
+          await supabaseAdmin
+            .from("monthly_summaries" as never)
+            .upsert(insertRows as never, {
+              onConflict: "company_id,account_code,account_description,period,source_file",
+            } as never);
+        }
+      }
+
+      return {
+        type: "monthly_summary" as const,
+        uploadId: null,
+        companyId,
+        headers,
+        sheetName: sheet.sheetName,
+        headerRowIndex: headerIndex,
+        fileContext: mergedContext,
+        detections: [] as ColumnDetectionResult[],
+        transactions: [] as ParsedTransaction[],
+        transactionCount: 0,
+        qualityScore: 100,
+        needsAIReview: [] as string[],
+        monthlySummary: summaryRows,
+        reconciliation: {
+          total_credit: Math.round(
+            summaryRows.reduce((s, r) => s + r.annual_total, 0) * 100,
+          ) / 100,
+          total_debet: 0,
+          row_count: summaryRows.length,
+        },
+      };
+    }
+
 
     // ── Detect each column ────────────────────────────────────────
     const detections: ColumnDetectionResult[] = [];
