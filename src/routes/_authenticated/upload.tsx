@@ -12,7 +12,7 @@ import { Upload, CheckCircle2, AlertTriangle, Loader2, FileSpreadsheet } from "l
 import { toast } from "sonner";
 import { parseExcel, classifyAccounts, saveClassifications, getMappingsSummary } from "@/lib/mapping.functions";
 import { previewImport, commitImport, previewJournalImport, commitJournalImport } from "@/lib/demo-import.functions";
-import { parseFileUniversal, approveColumnMapping, listColumnMappings } from "@/lib/universal-parser.functions";
+import { parseFileUniversal, approveColumnMapping, listColumnMappings, commitUniversalImport } from "@/lib/universal-parser.functions";
 import { STANDARD_FIELDS, type StandardField } from "@/lib/column-detector";
 import { GL_CATEGORIES } from "@/lib/categories";
 
@@ -486,6 +486,7 @@ type Detection = ParseUniversalResult["detections"][number];
 function SmartImportTab() {
   const parse = useServerFn(parseFileUniversal);
   const approve = useServerFn(approveColumnMapping);
+  const commit = useServerFn(commitUniversalImport);
   const toB64 = useFileToBase64();
   const qc = useQueryClient();
 
@@ -529,6 +530,28 @@ function SmartImportTab() {
       qc.invalidateQueries({ queryKey: ["column-mappings"] });
       toast.success(`Saved: ${det.original_name} → ${det.standard_field}`);
     },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const commitM = useMutation({
+    mutationFn: async () => {
+      if (!result) throw new Error("Nothing to import");
+      return commit({
+        data: {
+          uploadId: result.uploadId ?? null,
+          transactions: result.transactions.map((t) => ({
+            account_code: t.account_code,
+            date: t.date,
+            invoice_number: t.invoice_number,
+            customer_code: t.customer_code,
+            debet: t.debet,
+            credit: t.credit,
+            description: t.description,
+          })),
+        },
+      });
+    },
+    onSuccess: (r) => toast.success(`Imported ${r.inserted} invoice(s)`),
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -592,9 +615,14 @@ function SmartImportTab() {
                     {result.transactionCount} rows parsed · €{result.reconciliation.total_credit.toLocaleString()} credit · €{result.reconciliation.total_debet.toLocaleString()} debet
                   </CardDescription>
                 </div>
-                <Badge variant={allReviewed ? "default" : "destructive"}>
-                  {allReviewed ? "Ready to import" : `${reviewQueue.length} column(s) need review`}
-                </Badge>
+                {allReviewed ? (
+                  <Button onClick={() => commitM.mutate()} disabled={commitM.isPending || !result}>
+                    {commitM.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    Ready to import — click to commit
+                  </Button>
+                ) : (
+                  <Badge variant="destructive">{reviewQueue.length} column(s) need review</Badge>
+                )}
               </div>
             </CardHeader>
             <CardContent>
