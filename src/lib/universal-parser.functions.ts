@@ -52,17 +52,55 @@ const HEADER_KEYWORDS = [
   "description", "btw", "vat", "relatie", "klant", "factuurnummer",
 ];
 
+const MONTH_NAMES = [
+  "jan", "feb", "mrt", "mar", "apr", "mei", "may", "jun",
+  "jul", "aug", "sep", "okt", "oct", "nov", "dec",
+];
+const MONTH_TO_NUM: Record<string, string> = {
+  jan: "01", feb: "02", mrt: "03", mar: "03", apr: "04",
+  mei: "05", may: "05", jun: "06", jul: "07", aug: "08",
+  sep: "09", okt: "10", oct: "10", nov: "11", dec: "12",
+};
+
+export type DatasetType = "monthly_summary" | "gl_statement" | "transaction_ledger" | "unknown";
+
 interface HeaderDetection {
+  datasetType: DatasetType;
   headerIndex: number;
   dataStartIndex: number;
   context: FileContext;
+  skipColumns: number[];
 }
 
-/** Skip metadata rows at the top of the file; find the row with real column headers
- *  and extract file context (company, account, year, period range). */
+/** Skip metadata rows; detect dataset type; find real header row; extract context. */
 export function findHeaderRow(allRows: string[][]): HeaderDetection {
   const context: FileContext = {};
 
+  // ── TYPE A: Monthly summary — month names as column headers ──────
+  for (let i = 0; i < Math.min(allRows.length, 5); i++) {
+    const row = allRows[i] ?? [];
+    const monthCount = row.filter((cell) => {
+      const n = String(cell ?? "").toLowerCase().trim().slice(0, 3);
+      return MONTH_NAMES.includes(n);
+    }).length;
+    if (monthCount >= 6) {
+      const skipColumns: number[] = [];
+      row.forEach((cell, idx) => {
+        const t = String(cell ?? "").toLowerCase().trim();
+        if (t === "totaal" || t === "total") skipColumns.push(idx);
+      });
+      if (!row[0]?.trim()) skipColumns.push(0);
+      return {
+        datasetType: "monthly_summary",
+        headerIndex: i,
+        dataStartIndex: i + 1,
+        context,
+        skipColumns,
+      };
+    }
+  }
+
+  // ── TYPE B / C: Transaction rows ─────────────────────────────────
   for (let i = 0; i < Math.min(allRows.length, 30); i++) {
     const row = allRows[i] ?? [];
     const joined = row.join(" ");
@@ -76,7 +114,7 @@ export function findHeaderRow(allRows: string[][]): HeaderDetection {
     const yearMatch = joined.match(/boekjaar\s+(\d{4})/i);
     if (yearMatch) context.year = parseInt(yearMatch[1], 10);
 
-    const periodMatch = joined.match(/periode\s+(\d{1,2})\s*-\s*(\d{1,2})/i);
+    const periodMatch = joined.match(/periode\s+(\d{1,2})\s*[-–]\s*(\d{1,2})/i);
     if (periodMatch) {
       context.period_from = periodMatch[1];
       context.period_to = periodMatch[2];
@@ -89,10 +127,25 @@ export function findHeaderRow(allRows: string[][]): HeaderDetection {
     }).length;
 
     if (matchCount >= 3) {
-      return { headerIndex: i, dataStartIndex: i + 1, context };
+      const skipColumns: number[] = [];
+      row.forEach((cell, idx) => {
+        if (!String(cell ?? "").trim()) {
+          const hasData = allRows.slice(i + 1, i + 6).some(
+            (r) => String(r?.[idx] ?? "").trim(),
+          );
+          if (!hasData) skipColumns.push(idx);
+        }
+      });
+      return {
+        datasetType: i === 0 ? "transaction_ledger" : "gl_statement",
+        headerIndex: i,
+        dataStartIndex: i + 1,
+        context,
+        skipColumns,
+      };
     }
   }
-  return { headerIndex: 0, dataStartIndex: 1, context };
+  return { datasetType: "unknown", headerIndex: 0, dataStartIndex: 1, context, skipColumns: [] };
 }
 
 /** Layer 1b — identify a column from what its sample data looks like (no AI cost). */
