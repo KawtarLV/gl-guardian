@@ -24,17 +24,37 @@ export const runForecast = createServerFn({ method: "POST" })
 
     const companyId = await loadCompanyId(userId);
 
-    const [invR, payR, custR, projR, milR] = await Promise.all([
+    const [invR, payR, custR, projR, milR, msR] = await Promise.all([
       supabaseAdmin.from("invoices").select("*").eq("company_id", companyId),
       supabaseAdmin.from("payments").select("*").eq("company_id", companyId),
       supabaseAdmin.from("customers").select("*").eq("company_id", companyId),
       supabaseAdmin.from("projects").select("*").eq("company_id", companyId),
       supabaseAdmin.from("milestones").select("*").eq("company_id", companyId),
+      supabaseAdmin.from("monthly_summaries").select("period,total_credit").eq("company_id", companyId),
     ]);
 
     const region =
       (projR.data?.[0] as { region?: string | null } | undefined)?.region ?? "amsterdam";
     const weather = await fetchWeather13Weeks(region);
+
+    // Per-month revenue baseline learned from monthly_summaries (uploaded GL).
+    // period is "YYYY-MM"; total_credit ≈ revenue posting per account.
+    const monthRevenue = new Map<string, number>(); // "MM" → avg monthly revenue
+    {
+      const byMonth = new Map<string, { sum: number; n: number }>();
+      for (const r of msR.data ?? []) {
+        const period = String(r.period ?? "");
+        const mm = period.slice(5, 7);
+        if (!/^\d{2}$/.test(mm)) continue;
+        const credit = Number(r.total_credit ?? 0);
+        if (credit <= 0) continue;
+        const bucket = byMonth.get(mm) ?? { sum: 0, n: 0 };
+        bucket.sum += credit;
+        bucket.n += 1;
+        byMonth.set(mm, bucket);
+      }
+      for (const [mm, b] of byMonth) monthRevenue.set(mm, b.sum / b.n);
+    }
 
     const invoices = (invR.data ?? []).map((i) => ({
       id: i.id,
