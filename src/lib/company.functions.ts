@@ -5,8 +5,10 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 export const getOrCreateCompany = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { supabase, userId } = context;
-    const { data: existing } = await supabase
+    const { userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: existing } = await supabaseAdmin
       .from("company_members")
       .select("company_id, companies(id, name)")
       .eq("user_id", userId)
@@ -15,19 +17,15 @@ export const getOrCreateCompany = createServerFn({ method: "POST" })
       const co = Array.isArray(existing.companies) ? existing.companies[0] : existing.companies;
       return { companyId: existing.company_id, companyName: co?.name ?? "My Company" };
     }
-    // Create
-    const { data: newCo, error: e1 } = await supabase
+
+    const { data: newCo, error: e1 } = await supabaseAdmin
       .from("companies")
       .insert({ name: "My Company" })
       .select("id, name")
       .single();
     if (e1 || !newCo) throw new Error(e1?.message ?? "Failed to create company");
-    const { error: e2 } = await supabase
-      .from("company_members")
-      .insert({ company_id: newCo.id, user_id: userId });
-    if (e2) throw new Error(e2.message);
-    // Admin role
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    await supabaseAdmin.from("company_members").insert({ company_id: newCo.id, user_id: userId });
     await supabaseAdmin.from("user_roles").insert({
       user_id: userId, company_id: newCo.id, role: "admin",
     });
@@ -37,8 +35,9 @@ export const getOrCreateCompany = createServerFn({ method: "POST" })
 export const getMyCompany = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { supabase, userId } = context;
-    const { data } = await supabase
+    const { userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data } = await supabaseAdmin
       .from("company_members")
       .select("company_id, companies(id, name)")
       .eq("user_id", userId)
