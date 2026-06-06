@@ -403,7 +403,7 @@ export const parseFileUniversal = createServerFn({ method: "POST" })
         transactions: [] as ParsedTransaction[],
         transactionCount: 0,
         qualityScore: 100,
-        needsAIReview: sheetYears, // surface which sheets→years were parsed
+        needsAIReview: [] as string[], // monthly-pivot auto-imports; no per-column review needed
         monthlySummary: allSummaryRows,
         reconciliation: {
           total_credit: Math.round(
