@@ -294,6 +294,7 @@ function DemoDataTab() {
   const qc = useQueryClient();
 
   const [mode, setMode] = useState<"invoices" | "journal" | null>(null);
+  const [filename, setFilename] = useState<string | null>(null);
   const [invoices, setInvoices] = useState<DemoInvoice[]>([]);
   const [journalRows, setJournalRows] = useState<JournalRow[]>([]);
   const [previewData, setPreviewData] = useState<Awaited<ReturnType<typeof previewImport>> | null>(null);
@@ -301,6 +302,7 @@ function DemoDataTab() {
 
   const parseM = useMutation({
     mutationFn: async (file: File) => {
+      setFilename(file.name);
       const fileBase64 = await toB64(file);
       return parse({ data: { fileBase64, filename: file.name } });
     },
@@ -333,7 +335,7 @@ function DemoDataTab() {
   });
 
   const commitM = useMutation({
-    mutationFn: () => commit({ data: { invoices } }),
+    mutationFn: () => commit({ data: { invoices, filename } }),
     onSuccess: (r) => {
       toast.success(`Imported ${r.customers} customers + ${r.invoices} invoices`);
       qc.invalidateQueries();
@@ -342,7 +344,7 @@ function DemoDataTab() {
   });
 
   const commitJM = useMutation({
-    mutationFn: () => commitJ({ data: { rows: journalRows } }),
+    mutationFn: () => commitJ({ data: { rows: journalRows, filename } }),
     onSuccess: (r) => {
       toast.success(`Imported ${r.customers} synthetic customers · ${r.invoices} postings · ${r.mappings} GL mapping(s)`);
       qc.invalidateQueries();
