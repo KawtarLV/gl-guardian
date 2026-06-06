@@ -136,6 +136,7 @@ const JournalRowSchema = z.object({
 });
 const JournalInput = z.object({
   rows: z.array(JournalRowSchema).min(1).max(20000),
+  filename: z.string().nullable().optional(),
 });
 
 export const previewJournalImport = createServerFn({ method: "POST" })
@@ -174,6 +175,31 @@ export const commitJournalImport = createServerFn({ method: "POST" })
     const companyId = mem?.company_id;
     if (!companyId) throw new Error("No company found for user");
 
+    const { data: upload } = await supabaseAdmin
+      .from("file_uploads")
+      .insert({
+        company_id: companyId,
+        filename: data.filename ?? "journal import",
+        file_structure: "journal_import",
+        total_rows: data.rows.length,
+        parsed_rows: data.rows.length,
+        failed_rows: 0,
+        parse_quality_score: 100,
+        column_map: [],
+        warnings: [],
+        status: "imported",
+        uploaded_by: userId,
+      } as never)
+      .select("id")
+      .single();
+
+    await supabaseAdmin
+      .from("invoices")
+      .delete()
+      .eq("company_id", companyId)
+      .is("project_id", null)
+      .is("milestone_id", null);
+
     // Upsert one synthetic customer per unique trek (or per fallback name).
     const customerKey = (r: { trek: string | null; description: string }) =>
       r.trek ? `trek:${r.trek}` : `text:${r.description.slice(0, 30).toLowerCase()}`;
@@ -199,7 +225,7 @@ export const commitJournalImport = createServerFn({ method: "POST" })
     }
 
     // Insert synthetic invoices: due_date = datum + 30d.
-    const invoiceRows = data.rows.map((r) => {
+    const invoiceRows = data.rows.map((r, index) => {
       const due = new Date(r.datum);
       due.setDate(due.getDate() + 30);
       return {
@@ -209,6 +235,8 @@ export const commitJournalImport = createServerFn({ method: "POST" })
         invoice_date: r.datum,
         due_date: due.toISOString().slice(0, 10),
         status: "open",
+        external_ref: upload?.id ? `upload:${upload.id}:${index + 1}` : null,
+        gl_category: r.rekening,
       };
     });
     const { error: invErr } = await supabaseAdmin.from("invoices").insert(invoiceRows as never);
