@@ -89,6 +89,7 @@ export const runForecast = createServerFn({ method: "POST" })
     const weeks = engine({
       startingBalance: 0,
       invoices, payments, customers, projects, milestones, weather,
+      monthRevenue,
     });
 
     for (const w of weeks) {
